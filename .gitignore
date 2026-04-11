@@ -1,0 +1,25 @@
+# Flutter
+horse_app/build/
+horse_app/.dart_tool/
+horse_app/.packages
+horse_app/pubspec.lock
+
+# Python
+__pycache__/
+*.pyc
+
+# Large binary files
+*.pdf
+horse_photos/
+extracted_photos/
+horse_app/assets/photos/
+horses.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
