@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'data_service.dart';
+import 'web_download_stub.dart' if (dart.library.html) 'web_download.dart';
 
 class BackupService {
   static final BackupService instance = BackupService._();
@@ -24,6 +25,11 @@ class BackupService {
     final (bytes, filename) = createBackup();
 
     try {
+      if (kIsWeb) {
+        triggerWebDownload(bytes, filename);
+        return true;
+      }
+
       final result = await FilePicker.saveFile(
         dialogTitle: 'Save Backup',
         fileName: filename,
@@ -32,7 +38,6 @@ class BackupService {
         bytes: bytes,
       );
 
-      if (kIsWeb) return true;
       return result != null;
     } catch (e) {
       debugPrint('Backup save error: $e');
