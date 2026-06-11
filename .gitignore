@@ -15,6 +15,9 @@ extracted_photos/
 horse_app/assets/photos/
 horses.db
 
+# Kristina's device backup — personal data, never commit/publish
+kristina_data/
+
 # OS
 .DS_Store
 Thumbs.db
