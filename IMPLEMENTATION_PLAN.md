@@ -66,13 +66,32 @@ Existing columns stay. `id` is repurposed to hold pedigree_id. New columns (all 
 
 New `horse_markings` table (`horse_id`, `marking`) for marking-based search. Progeny/siblings are **derived by query** (`WHERE sire_id=? OR dam_id=?`) — no extra tables, no card clutter.
 
-## 6. Build pipeline (reproducible — including the currently-missing DB→JSON step)
+## 6. Curation & update tooling (the reviewable pipeline)
 
+Both recurring jobs — ingesting Kristina's backup and re-scraping the website — reduce to the **same shape**: a source produces a **changeset** of proposed items; we review each item Accept/Reject; accepted items merge into the authoring DB; assets rebuild.
+
+```
+SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
+  ├─ ingest K's backup.json → {new photos+YOLO crops, bands, herds, notes}
+  └─ re-scrape website       → {new horses, departed→past, changed fields}
+```
+
+**Three separated layers** (matters because the app gets sold):
+- **Authoring DB** (`horses.db`) — source of truth, lives only on this machine.
+- **Curator console** (`tools/curator/`, **Flask**, localhost) — build-time review tool, **never ships** in the app.
+- **The app** — only ever consumes built assets (`assets/horses_data.json` + `assets/photos/`).
+
+**Changeset format:** a list of typed items (`photo` | `field_change` | `new_horse` | `departed`), each carrying before/after + provenance. The console renders each per type: photo crops original↔cropped side-by-side; field changes as old/new diffs; new/departed horses as cards. Buttons: Accept / Reject / (Re-crop | Edit); plus bulk "accept all". On **Merge**, accepted items write to `horses.db`.
+
+**Workflow division ("smooth for you and I"):** I run the command (`ingest <backup.json>` or `scrape`) → it builds the changeset and launches the console → you click through visually → Merge → I rebuild assets. On-demand, repeatable; no fixed schedule (re-scrape whenever, more often than yearly is fine).
+
+### Build pipeline (reproducible — including the currently-missing DB→JSON step)
 1. `scrape_pedigrees.py` — fetch VA+MD Current rosters; for each id fetch `pedigree.php`, **cache raw HTML**, throttle ~1.5 s.
 2. `parse_pedigree.py` — grammar parser → structured fields + marking tokens + sire/dam ids.
-3. `build_db.py` — write `horses.db`, regenerate `assets/horses_data.json` keyed by pedigree_id.
-   - **MERGE semantics (critical for annual updates):** canon photos/bands/herds collected from Kristina are keyed by pedigree_id and must be **preserved/merged** on every re-scrape — the scrape refreshes public fields only, never clobbers our unique content.
-4. Validation: every current-herd pony present; spot-check 5 end-to-end; confirm Kristina's remapped data round-trips.
+3. `make_changeset.py` — diff scrape/ingest against authoring `horses.db` → changeset for the console.
+4. `build_assets.py` — after merge, write/refresh `horses.db` → regenerate `assets/horses_data.json` (keyed by pedigree_id) + copy photo assets.
+   - **MERGE semantics (critical for updates):** canon photos/bands/herds (from Kristina) are keyed by pedigree_id and must be **preserved/merged** on every re-scrape — scraping refreshes public fields only, never clobbers our unique content.
+5. Validation: every current-herd pony present; spot-check 5 end-to-end; confirm Kristina's remapped data round-trips.
 
 ## 7. App changes (Flutter)
 
@@ -92,9 +111,9 @@ New `horse_markings` table (`horse_id`, `marking`) for marking-based search. Pro
 
 ## 9. Phasing
 
-0. Capture K's backup → inspect/triage → YOLO-crop → offline ID-remap. _(needs the backup file)_
-1. Convert system to pedigree_id; rebuild DB/JSON; K restores remapped backup.
-2. Add 11 missing VA ponies + `life_status`; surface enrichment fields on detail screen.
+0. **Build the curator console** (`tools/curator/`, Flask) — the reviewable changeset/merge pipeline. First use case: ingest K's backup (capture → YOLO-crop → click-through accept/reject → merge), plus offline ID-remap. _(needs the backup file)_
+1. Convert system to pedigree_id; rebuild assets; K restores remapped backup.
+2. Wire the re-scrape source into the same console; add 11 missing VA ponies + `life_status`; surface enrichment fields on detail screen.
 3. Markings search.
 4. MD herd + VA/MD toggle.
 5. Family tree navigation.
