@@ -93,6 +93,8 @@ Existing columns stay. `id` is repurposed to hold pedigree_id. New columns (all 
 
 **Herd hierarchy:** `state` = VA (Chincoteague/CVFD) | MD (Assateague/NPS), from the website. `region` = `northern` | `southern`, **VA only** — Kristina's observational sub-herd split (not on the website); **MD horses have `region = null`** (the MD herd isn't subdivided). The old `herd` column (free-text, currently unused) is superseded by `state`+`region`. Kristina's backup `herd` values (`southern`×35, `northern`×26) map into `region`.
 
+`region` is **mutable, in-flux observational data** (wild horses move N↔S), shipped as a **dated canon snapshot** refreshed semi-annually with the scrape; end users can locally override it between releases (§0.1), and Kristina's overrides are harvested into the next snapshot. **Design choice:** store a `region_observed` date alongside `region` (backfill existing assignments with the backup's export date, 2026-06-10) so freshness is visible — recommended, since the data's whole point is tracking movement. Bands already carry dates; this makes region consistent.
+
 _(No `life_status` column: the canonical dataset is current VA/MD herds only. When a re-scrape finds a horse moved to the website's Past view, the changeset proposes a **deletion** rather than a status flip.)_
 
 `horse_photos` gains a **`credit`** column (e.g. `K. Kent`) and its `source` token for our new photos changes from `user` → `field` (book photos stay `book`). App photo-priority + the model/`fromMap` update accordingly.
