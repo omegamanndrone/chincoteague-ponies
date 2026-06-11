@@ -21,6 +21,10 @@ kristina_data/
 # Curator ingest output — extracted photo originals + personal notes
 tools/curator/out/
 
+# Curator isolated venv + vendored model weights (large binary)
+tools/curator/.venv/
+tools/curator/models/
+
 # OS
 .DS_Store
 Thumbs.db
