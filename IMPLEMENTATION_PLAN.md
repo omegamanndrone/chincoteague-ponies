@@ -69,7 +69,7 @@ This is **Flow 1** (her collected data → canon), distinct from how her device 
 
 - `pedigree_id` **becomes the `id`** everywhere: `horses_data.json`, Hive keys, sire/dam relationships. The old arbitrary local id (1–143) is retired.
 - Relationships are then trivial: `sire_id`/`dam_id` *are* pedigree ids; the family tree resolves with no indirection.
-- Reserve an id range (e.g. `≥ 900000`) for any future **app-local** horse Kristina adds that the website hasn't catalogued yet, so it can't collide with a real pedigree_id. (This phase she annotates existing catalogued horses; brand-new foals arrive via the next scrape.)
+- _(Deferred: a reserved id range for app-created horses the website hasn't catalogued. Not needed now — the app only annotates existing catalogued horses; new foals arrive via re-scrape. Revisit only if we add a "log an uncatalogued horse" feature.)_
 
 ### Flow 2 — how her device survives the cutover (deploy = GitHub Pages, auto-reaches her)
 Hosting is **GitHub Pages** (free): a push updates the live site; her PWA picks it up via the service worker on next load. Her data lives in **browser IndexedDB (Hive)** and persists across code updates — a deploy never deletes it. The only danger is the **id-scheme mismatch** (old-keyed boxes vs new pedigree-keyed code). We handle it with a **device overwrite at cutover**, which is safe *because* her data was already captured + baked into canon (§3d):
@@ -83,7 +83,9 @@ Hosting is **GitHub Pages** (free): a push updates the live site; her PWA picks 
 ## 5. Schema changes (`horses`)
 
 Existing columns stay. `id` is repurposed to hold pedigree_id. New columns (all nullable, additive):
-`state` (VA/MD), `life_status` (current/past), `coat_pattern`, `markings`, `genotype`, `birth_location`, `breeder`, `owner`, `auction_number`, `registry`, `registry_number`, `sire_id`, `dam_id`, `dsc_photo_url` (copyrighted gallery link-out).
+`state` (VA/MD), `coat_pattern`, `markings`, `genotype`, `birth_location`, `breeder`, `owner`, `auction_number`, `registry`, `registry_number`, `sire_id`, `dam_id`, `dsc_photo_url` (copyrighted gallery link-out).
+
+_(No `life_status` column: the canonical dataset is current VA/MD herds only. When a re-scrape finds a horse moved to the website's Past view, the changeset proposes a **deletion** rather than a status flip.)_
 
 `horse_photos` gains a **`credit`** column (e.g. `K. Kent`) and its `source` token for our new photos changes from `user` → `field` (book photos stay `book`). App photo-priority + the model/`fromMap` update accordingly.
 
@@ -120,7 +122,7 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 
 - `horse.dart` — new fields in model/`fromMap`/`toMap`/`copyWith`.
 - `data_service.dart` — load new fields; `state` (VA/MD) filter; marking search; family resolver by id; **user-photo-primary** ordering (flip `getFirstPhotoForHorse` to prefer `source != 'book'`). **Add `data_version` handling on `init()`:** schema bump → clear all boxes + reload bundled canon (one-time cutover); content bump → reload canon/book box only, preserve user boxes (replaces today's empty-box-only load gate).
-- `horse_list_screen.dart` — VA/MD toggle; marking filter chips; graceful empty-photo tiles; optional "past/departed" filter (default hidden).
+- `horse_list_screen.dart` — VA/MD toggle; marking filter chips; graceful empty-photo tiles. (No departed/past filter — departed horses aren't in the dataset.)
 - `horse_detail_screen.dart` — show markings/pattern/genotype/registry; single tappable **Family** row → tree; keep video/pedigree links; photo gallery with K's photos first.
 - New family tree screen (current-herd nodes clickable; others plain names).
 
@@ -128,26 +130,31 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 
 - **Book photos (280):** kept, `source='book'`, demoted to secondary. Never deleted.
 - **Kristina's photos:** YOLO-cropped, **watermarked + attributed to K. Kent** (§3c.1), `source='field'` with `credit='K. Kent'`, **primary** image — this is the "slowly replace book photos" path and prepares the photos as sellable, credited assets.
-- **Family tree:** **do not import dead/removed horses.** Ancestors not in current VA/MD herds show as plain non-clickable names; tree dead-ends there. (The 6 already-in-app departed horses are *kept* — they may hold K's data/book photos — marked `life_status='past'` and hidden from the default list.)
+- **Departed horses:** **deleted from the canonical current dataset** (consistent with the update paths — the new build ships current VA/MD herds only). The 6 departed horses now in the app go away too. ⚠️ **Gate:** before deleting, the K-ingest changeset must surface any of her data (photos/bands/notes) attached to those 6 for keep-or-discard review — we decide once we see her backup. **Future option** (not now): if the app ever carries departed horses, they live in an **isolated "Departed" section**, integrated with the rest of the system *only* through the family tree — mirroring the website's separate Past-herd view.
+- **Family tree:** **do not import dead/removed horses.** Ancestors not in current VA/MD herds (including the departed) show as plain non-clickable names; the tree dead-ends there.
 - **DSC Photography galleries** & **identifyingchincoteagueponies.com videos:** copyrighted → **link out only, never download/rehost.**
 - **Pedigree text:** factual/public, maintainers invite contributions → scrape politely.
 
 ## 9. Phasing
 
-0. **Build the curator console** (`tools/curator/`, Flask) — the reviewable changeset/merge pipeline. First use case: ingest K's backup (capture → YOLO-crop → click-through accept/reject → merge), plus offline ID-remap. _(needs the backup file)_
-1. Convert system to pedigree_id; rebuild assets; K restores remapped backup.
-2. Wire the re-scrape source into the same console; add 11 missing VA ponies + `life_status`; surface enrichment fields on detail screen.
+0. **Build the curator console** (`tools/curator/`, Flask) — the reviewable changeset/merge pipeline. First use case: ingest K's backup (capture → YOLO-crop+watermark → click-through accept/reject → merge), including the data-on-departed-horses keep/discard gate, plus offline ID-remap into canon. _(needs the backup file)_
+1. Convert system to pedigree_id; rebuild assets with K's data baked in; deploy the cutover build — her device self-overwrites on the `data_version` bump (no manual restore).
+2. Wire the re-scrape source into the same console; add 11 missing VA ponies; delete departed horses; surface enrichment fields on detail screen.
 3. Markings search.
 4. MD herd + VA/MD toggle.
 5. Family tree navigation.
 6. Polish (DSC link-out, device-photo replacement UX, history-blurb groundwork for sale).
 
-## 10. Remaining open questions (defaulted — tell me to change any)
+## 10. Resolved decisions & pending input
 
-- **Crop buffer %** — default 6% of box dims, clamped to image. _(easy to tune after we see results on real photos)_
-- **Crop model** — default stock `yolov8m.pt`; switch to farm_guardian if it crops better on her shots. _(decide empirically on a sample)_
-- **Departed-6 horses** — default: keep, mark `past`, hide from default list. Alternative: delete.
-- **App-local id range** for future uncatalogued horses — default reserve `≥ 900000`.
-- **Pending input:** Kristina's backup file itself — canon-vs-personal on *notes* is the only triage that waits on seeing real content.
+Resolved:
+- **Crop buffer** — 6% of box dims, clamped to image (tunable later).
+- **Crop model** — stock `yolov8m.pt`.
+- **Departed horses** — **delete** from the canonical dataset (no `life_status`), consistent with the update paths. Any future departed-horse support lives in an isolated "Departed" section, integrated only via the family tree. Gated by the K-data keep/discard review.
+- **Uncatalogued-horse id range** — deferred (not needed unless we add an "add a horse" feature).
+
+Pending input (tomorrow, with K's backup):
+- **Notes** — canon vs personal (the only triage that needs the real content).
+- **Data attached to the 6 departed horses** — keep anything valuable before deletion.
 
 _No remaining blockers to start Phase 0 the moment the backup file lands._
