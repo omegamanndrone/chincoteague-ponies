@@ -33,16 +33,28 @@ The app's built-in **Backup** (list screen → backup icon → Backup) calls `ex
 ### 3b. Inspect & triage canon
 On receipt, I report exact counts (photos / bands / herds / notes) and dump the notes text. Policy: **everything → canon except flagged-personal notes.** Photos and band/herd observations are the whole point of collection.
 
-### 3c. YOLO auto-crop pipeline (offline, on this machine)
-Reuse the DRONE BRAIN YOLO stack (`ultralytics 8.4.17`, `cv2`, PIL — all verified present). For each device photo:
+### 3c. YOLO auto-crop pipeline (offline, on this machine — standalone in `tools/curator/`)
+Uses the horse-detection capability only (`ultralytics 8.4.17` + `cv2` + PIL, verified present). **No coupling to the drone_brain project** — we borrow the technique/weights, nothing more. For each device photo:
 1. Run detection; filter to class `horse`.
 2. Pick the **largest-area** horse box.
 3. Expand the box by a small buffer (default ~6% of box w/h) **clamped to image bounds** so the horse never touches the crop edge.
-4. Write the cropped image as the canon display photo.
+4. Apply attribution (§3c.1).
+5. Write the cropped image as the canon display photo.
 
 - **Model:** default stock `yolov8m.pt` (COCO `horse`, best for ground-level tourist photos); farm_guardian weights (`models/farm_guardian_*/weights/best.pt`, also has `horse`=17) as fallback.
 - **No horse detected:** keep original uncropped, flag for manual review.
-- **Originals archived** (never discarded) so we can re-crop with different params later. Cropped version is what ships.
+- **Originals archived** (never discarded) so we can re-crop / re-watermark with different params later. Cropped version is what ships.
+
+### 3c.1. Watermark & attribution (built into the crop step — for a sellable product)
+Every cropped image is credited to **K. Kent** using the industry-standard two-layer approach (visible mark + embedded metadata):
+
+- **Visible watermark (PIL, available now):** subtle `© K. Kent` baked into a corner (default bottom-right, semi-transparent ~40%, small). Travels with the file if extracted; tunable / can be dialed back.
+- **Embedded metadata — IPTC Photo Metadata Standard (the actual industry standard), mirrored to XMP + EXIF:**
+  - IPTC `Creator` / By-line + XMP `dc:creator` + EXIF `Artist` = `K. Kent`
+  - IPTC `CopyrightNotice` + XMP `dc:rights` + EXIF `Copyright` = `© {year} K. Kent. All rights reserved.`
+  - IPTC `Credit` + XMP `photoshop:Credit` = `K. Kent`
+  - **Tooling to add:** `exiftool` (industry-standard CLI for IPTC/XMP) — *not yet installed*; `piexif` as a lightweight pure-Python EXIF fallback — *not yet installed*. PIL alone covers the visible mark + minimal EXIF if we want zero new deps initially.
+- **Provenance label change:** these are **not** generic `source='user'`. Photos get a `credit` field (`K. Kent`) and a meaningful `source` token (e.g. `field`, replacing `user`) — see §5. Book photos keep their own credit/source.
 
 ### 3d. Offline ID remap → bake into canon (build-time, my machine)
 This is **Flow 1** (her collected data → canon), distinct from how her device survives the update (**Flow 2**, §4). The remap exists so her exported data can be merged into the authoring DB as canon:
@@ -72,6 +84,8 @@ Hosting is **GitHub Pages** (free): a push updates the live site; her PWA picks 
 
 Existing columns stay. `id` is repurposed to hold pedigree_id. New columns (all nullable, additive):
 `state` (VA/MD), `life_status` (current/past), `coat_pattern`, `markings`, `genotype`, `birth_location`, `breeder`, `owner`, `auction_number`, `registry`, `registry_number`, `sire_id`, `dam_id`, `dsc_photo_url` (copyrighted gallery link-out).
+
+`horse_photos` gains a **`credit`** column (e.g. `K. Kent`) and its `source` token for our new photos changes from `user` → `field` (book photos stay `book`). App photo-priority + the model/`fromMap` update accordingly.
 
 New `horse_markings` table (`horse_id`, `marking`) for marking-based search. Progeny/siblings are **derived by query** (`WHERE sire_id=? OR dam_id=?`) — no extra tables, no card clutter.
 
@@ -113,7 +127,7 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 ## 8. Photos, family tree & licensing
 
 - **Book photos (280):** kept, `source='book'`, demoted to secondary. Never deleted.
-- **Kristina's photos:** YOLO-cropped, `source='user'`, **primary** image — this is the "slowly replace book photos" path.
+- **Kristina's photos:** YOLO-cropped, **watermarked + attributed to K. Kent** (§3c.1), `source='field'` with `credit='K. Kent'`, **primary** image — this is the "slowly replace book photos" path and prepares the photos as sellable, credited assets.
 - **Family tree:** **do not import dead/removed horses.** Ancestors not in current VA/MD herds show as plain non-clickable names; tree dead-ends there. (The 6 already-in-app departed horses are *kept* — they may hold K's data/book photos — marked `life_status='past'` and hidden from the default list.)
 - **DSC Photography galleries** & **identifyingchincoteagueponies.com videos:** copyrighted → **link out only, never download/rehost.**
 - **Pedigree text:** factual/public, maintainers invite contributions → scrape politely.
