@@ -6,7 +6,10 @@ _Updated 2026-06-10. Source site: `chincoteaguepedigrees.com` (static HTML, ISO-
 
 Right now the app is a **field collection tool** for Kristina: access the public pedigree data fast/streamlined, and add her own observations, band relationships, and photos. After she has built a library of **unique, uncopyrighted** photos and fleshed out band relationships, we add features (history blurbs, etc.) and **sell it publicly with annual updates** that track the website plus our unique content. So: build everything public-facing, but the immediate job is data/photo collection.
 
-Implication: **almost everything in Kristina's backup becomes canon** (ships to all future users) — the exception is any genuinely personal free-text notes, which I'll surface for review before shipping.
+### 0.1. Core architecture principle (canon vs. local)
+**The app never auto-uploads anything to canon. Every user's herd edits, notes, and photos live only on their own device. Canon changes _only_ through our build-time curator pipeline.** This is the model a shared/sold app needs — each buyer keeps their own local annotations privately.
+- **Normal end user (future):** all their herd edits / notes / photos are local, never propagated.
+- **Kristina (super-user / content source):** same local behavior, but we **manually harvest her photos + band/herd observations into canon** via the curator console. **Her notes stay personal/local — never canon** (sloppy working notes we don't want propagated).
 
 ## 1. Sequencing (per your direction)
 
@@ -30,8 +33,10 @@ Per-pony page `pedigree.php?id=N`: description block + 4-gen pedigree (sire/dam 
 ### 3a. Capture (smoothest path — no cable)
 The app's built-in **Backup** (list screen → backup icon → Backup) calls `exportUserData()` and writes `chincoteague_backup_DATE.json` — a self-contained file with notes, herds, bands, photo metadata, **and every device photo base64-encoded**. Save to Files/iCloud → bring to project dir. (No iOS sandbox extraction needed.)
 
-### 3b. Inspect & triage canon
-On receipt, I report exact counts (photos / bands / herds / notes) and dump the notes text. Policy: **everything → canon except flagged-personal notes.** Photos and band/herd observations are the whole point of collection.
+### 3b. Inspect & harvest to canon
+On receipt, I report exact counts (photos / bands / herds / notes). Policy follows the architecture principle (§0.1):
+- **Photos + band/herd observations → harvested to canon** (K is the content source; this is the point of collection).
+- **Notes → stay personal/local, never canon** — they remain only on K's device.
 
 ### 3c. YOLO auto-crop pipeline (offline, on this machine — standalone in `tools/curator/`)
 Uses the horse-detection capability only (`ultralytics 8.4.17` + `cv2` + PIL, verified present). **No coupling to the drone_brain project** — we borrow the technique/weights, nothing more. For each device photo:
@@ -76,9 +81,10 @@ Hosting is **GitHub Pages** (free): a push updates the live site; her PWA picks 
 
 - Add a **`data_version` flag** in Hive. The cutover build bumps it.
 - **Schema change (one-time cutover):** on boot, version bump detected → **clear all boxes and reload the fresh pedigree-keyed bundled data** (which now contains her integrated canon). No in-app key-remap, no manual re-import.
-- **Content update (every later deploy):** version bump → **reload the canon/book box only; leave her user boxes untouched.** This is also the fix for today's bug where new horses never reach existing users (book data only loads when the box is empty — [data_service.dart:30](horse_app/lib/services/data_service.dart#L30)). A post-cutover "add foals" deploy must **never** wipe the new data she's collected since.
+- **Content update (every later deploy):** version bump → **reload the canon/book box only; leave her user boxes untouched.** This is also the fix for today's bug where new horses never reach existing users (book data only loads when the box is empty — [data_service.dart:30](horse_app/lib/services/data_service.dart#L30)). A post-cutover "add foals" deploy must **never** wipe the local data she's collected since.
+- **Deleted horse (deceased) + existing local data:** harmless. The app only renders horses present in canon, so any orphaned user data keyed to a removed horse simply never displays — no crash, no corruption. _(Orphaned blobs linger in storage; optional future "prune orphans" pass. A future "Departed" section could resurface a user's own data on departed horses.)_
 
-**Lossless conditions:** (1) one final export immediately before the cutover, with a brief freeze on adding data; (2) personal-vs-canon decision on her notes — make all canon (zero re-import) or she re-imports only the personal slice. **During the collection phase, deploy only non-schema changes**; the id cutover is a deliberate, coordinated event.
+**Lossless conditions:** (1) one final export immediately before the cutover, with a brief freeze on adding data; (2) **personal notes** — since notes are local-only (never canon, §0.1), the cutover's box-wipe would drop them, so we **remap her notes old→pedigree id and re-import once** after the overwrite (her photos/herd return automatically via canon). If her notes are throwaway, we may skip this — decide once we see the volume. **During the collection phase, deploy only non-schema changes**; the id cutover is a deliberate, coordinated event.
 
 ## 5. Schema changes (`horses`)
 
@@ -154,7 +160,7 @@ Resolved:
 - **Uncatalogued-horse id range** — deferred (not needed unless we add an "add a horse" feature).
 
 Pending input (tomorrow, with K's backup):
-- **Notes** — canon vs personal (the only triage that needs the real content).
+- **Notes** — confirmed **personal/local, never canon** (§0.1). Only open call: preserve them through the cutover (remap + one re-import) vs. treat as disposable — based on how many/how useful they are.
 - **Data attached to the 6 departed horses** — keep anything valuable before deletion.
 
 _No remaining blockers to start Phase 0 the moment the backup file lands._
