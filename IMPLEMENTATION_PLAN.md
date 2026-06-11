@@ -44,12 +44,12 @@ Reuse the DRONE BRAIN YOLO stack (`ultralytics 8.4.17`, `cv2`, PIL — all verif
 - **No horse detected:** keep original uncropped, flag for manual review.
 - **Originals archived** (never discarded) so we can re-crop with different params later. Cropped version is what ships.
 
-### 3d. Offline ID remap (single device → no in-app migration code)
-Because it's one device, we remap her backup **offline** rather than shipping migration logic:
+### 3d. Offline ID remap → bake into canon (build-time, my machine)
+This is **Flow 1** (her collected data → canon), distinct from how her device survives the update (**Flow 2**, §4). The remap exists so her exported data can be merged into the authoring DB as canon:
 - Translate every horse-id key from local id → `pedigree_id` using the complete, verified mapping (all 143 horses carry their pedigree_id in `qr_pedigree_url`).
 - **Bands need both ids remapped** — keys are `${horseId}_${stallionId}_${date}` and values store both; translate key + values.
 - Photo-blob keys are filenames → unchanged.
-- Output: a pedigree-id-keyed backup she restores once after installing the new build.
+- Output: her photos/bands/herds (and any canon notes) **baked into the new build's assets**, keyed by pedigree_id — not a file she manually restores.
 
 ⚠️ Must be done by export→transform→rebuild, **not in place**: 10+ of the old local ids (e.g. local 42 = "A Splash of Freckles") collide with a *different* horse's pedigree id, so in-place renumbering is ambiguous.
 
@@ -58,6 +58,15 @@ Because it's one device, we remap her backup **offline** rather than shipping mi
 - `pedigree_id` **becomes the `id`** everywhere: `horses_data.json`, Hive keys, sire/dam relationships. The old arbitrary local id (1–143) is retired.
 - Relationships are then trivial: `sire_id`/`dam_id` *are* pedigree ids; the family tree resolves with no indirection.
 - Reserve an id range (e.g. `≥ 900000`) for any future **app-local** horse Kristina adds that the website hasn't catalogued yet, so it can't collide with a real pedigree_id. (This phase she annotates existing catalogued horses; brand-new foals arrive via the next scrape.)
+
+### Flow 2 — how her device survives the cutover (deploy = GitHub Pages, auto-reaches her)
+Hosting is **GitHub Pages** (free): a push updates the live site; her PWA picks it up via the service worker on next load. Her data lives in **browser IndexedDB (Hive)** and persists across code updates — a deploy never deletes it. The only danger is the **id-scheme mismatch** (old-keyed boxes vs new pedigree-keyed code). We handle it with a **device overwrite at cutover**, which is safe *because* her data was already captured + baked into canon (§3d):
+
+- Add a **`data_version` flag** in Hive. The cutover build bumps it.
+- **Schema change (one-time cutover):** on boot, version bump detected → **clear all boxes and reload the fresh pedigree-keyed bundled data** (which now contains her integrated canon). No in-app key-remap, no manual re-import.
+- **Content update (every later deploy):** version bump → **reload the canon/book box only; leave her user boxes untouched.** This is also the fix for today's bug where new horses never reach existing users (book data only loads when the box is empty — [data_service.dart:30](horse_app/lib/services/data_service.dart#L30)). A post-cutover "add foals" deploy must **never** wipe the new data she's collected since.
+
+**Lossless conditions:** (1) one final export immediately before the cutover, with a brief freeze on adding data; (2) personal-vs-canon decision on her notes — make all canon (zero re-import) or she re-imports only the personal slice. **During the collection phase, deploy only non-schema changes**; the id cutover is a deliberate, coordinated event.
 
 ## 5. Schema changes (`horses`)
 
@@ -96,7 +105,7 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 ## 7. App changes (Flutter)
 
 - `horse.dart` — new fields in model/`fromMap`/`toMap`/`copyWith`.
-- `data_service.dart` — load new fields; `state` (VA/MD) filter; marking search; family resolver by id; **user-photo-primary** ordering (flip `getFirstPhotoForHorse` to prefer `source != 'book'`).
+- `data_service.dart` — load new fields; `state` (VA/MD) filter; marking search; family resolver by id; **user-photo-primary** ordering (flip `getFirstPhotoForHorse` to prefer `source != 'book'`). **Add `data_version` handling on `init()`:** schema bump → clear all boxes + reload bundled canon (one-time cutover); content bump → reload canon/book box only, preserve user boxes (replaces today's empty-box-only load gate).
 - `horse_list_screen.dart` — VA/MD toggle; marking filter chips; graceful empty-photo tiles; optional "past/departed" filter (default hidden).
 - `horse_detail_screen.dart` — show markings/pattern/genotype/registry; single tappable **Family** row → tree; keep video/pedigree links; photo gallery with K's photos first.
 - New family tree screen (current-herd nodes clickable; others plain names).
