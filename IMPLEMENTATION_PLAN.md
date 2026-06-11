@@ -1,6 +1,6 @@
 # Chincoteague/Assateague Ponies App — Data Refresh, ID Conversion & Photo Pipeline
 
-_Updated 2026-06-10. Source site: `chincoteaguepedigrees.com` (static HTML, ISO-8859-1)._
+_Updated 2026-06-10. Source site: `chincoteaguepedigrees.com` (static HTML, ISO-8859-1). Kristina's device backup received & verified (§3a/§3b). Next session: begin Phase 0 — scaffold `tools/curator/`._
 
 ## 0. Product context (shapes every decision)
 
@@ -30,13 +30,20 @@ Per-pony page `pedigree.php?id=N`: description block + 4-gen pedigree (sire/dam 
 
 ## 3. Phase 0 — Capture & integrate Kristina's device data
 
-### 3a. Capture (smoothest path — no cable)
-The app's built-in **Backup** (list screen → backup icon → Backup) calls `exportUserData()` and writes `chincoteague_backup_DATE.json` — a self-contained file with notes, herds, bands, photo metadata, **and every device photo base64-encoded**. Save to Files/iCloud → bring to project dir. (No iOS sandbox extraction needed.)
+### 3a. Capture (smoothest path — no cable) — ✓ DONE
+The app's built-in **Backup** (list screen → backup icon → Backup) calls `exportUserData()` and writes `chincoteague_backup_DATE.json` — a self-contained file with notes, herds, bands, photo metadata, **and every device photo base64-encoded**. Saved to Files/iCloud → project dir. (No iOS sandbox extraction needed.)
+**✓ Received & gitignored:** `kristina_data/chincoteague_backup_2026-06-10.json` (33 MB, v1, exported 2026-06-10 20:16).
 
-### 3b. Inspect & harvest to canon
-On receipt, I report exact counts (photos / bands / herds / notes). Policy follows the architecture principle (§0.1):
-- **Photos + band/herd observations → harvested to canon** (K is the content source; this is the point of collection).
+### 3b. Inspect & harvest to canon — ✓ INSPECTED (verified contents below)
+Policy follows the architecture principle (§0.1):
+- **Photos + band/region observations → harvested to canon** (K is the content source; this is the point of collection).
 - **Notes → stay personal/local, never canon** — they remain only on K's device.
+
+**Verified backup contents** (all 66 referenced horse ids valid → map cleanly to our 143):
+- **61 region assignments** (`southern`×35, `northern`×26) → canon `region`.
+- **44 band sightings** — mare→stallion, dated, multiple dates per mare; 5 stallions (Tornado's Legacy 15, Surfer's Riptide 12, Norman Rockwell Giddings 12, Thunderbolt 3, Beach Boy 2) → canon bands. _Note: predates the band-remove fix (§11), so some may be stale — prune in the console review._
+- **15 photos** (~13 horses), full-res 12 MP (4032×3024), JPEG/MPO → crop+watermark to canon.
+- **5 notes** (stay local): Winter Moon (died), Gidget's Beach Baby (passed), CLG Pennies From Heaven (vet care PA), Joe's Spirit (roadside incident), Shy & Sassy Sweet Lady Suede (eye injury). Valuable enough to **preserve through the cutover** (§4).
 
 ### 3c. YOLO auto-crop pipeline (offline, on this machine — standalone in `tools/curator/`)
 Uses the horse-detection capability only (`ultralytics 8.4.17` + `cv2` + PIL, verified present). **No coupling to the drone_brain project** — we borrow the technique/weights, nothing more. For each device photo:
@@ -147,7 +154,9 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 
 ## 9. Phasing
 
-0. **Build the curator console** (`tools/curator/`, Flask) — the reviewable changeset/merge pipeline. First use case: ingest K's backup (capture → YOLO-crop+watermark → click-through accept/reject → merge), including the data-on-departed-horses keep/discard gate, plus offline ID-remap into canon. _(needs the backup file)_
+**Prerequisite (do before/alongside Phase 0): fix the band-remove bug (§11).** It's a non-schema change, safe to deploy during collection, and keeps Kristina's *ongoing* band data clean for future harvests. (This backup predates it, so its band data gets pruned in the console review instead.)
+
+0. **Build the curator console** (`tools/curator/`, Flask) — the reviewable changeset/merge pipeline. First use case: ingest K's backup (capture → YOLO-crop+watermark → click-through accept/reject → merge), including the data-on-departed-horses keep/discard gate, plus offline ID-remap into canon. _(backup file ✓ received)_
 1. Convert system to pedigree_id; rebuild assets with K's data baked in; deploy the cutover build — her device self-overwrites on the `data_version` bump (no manual restore).
 2. Wire the re-scrape source into the same console; add 11 missing VA ponies; delete departed horses; surface enrichment fields on detail screen.
 3. Markings search.
@@ -160,17 +169,18 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 Resolved:
 - **Crop buffer** — 6% of box dims, clamped to image (tunable later).
 - **Crop model** — stock `yolov8m.pt`.
-- **Departed horses** — **delete** from the canonical dataset (no `life_status`), consistent with the update paths. Any future departed-horse support lives in an isolated "Departed" section, integrated only via the family tree. Gated by the K-data keep/discard review.
+- **Departed horses** — **delete** from the canonical dataset (no `life_status`), consistent with the update paths. Any future departed-horse support lives in an isolated "Departed" section, integrated only via the family tree.
 - **Uncatalogued-horse id range** — deferred (not needed unless we add an "add a horse" feature).
+- **Notes** — **personal/local, never canon** (§0.1); the 5 are valuable (deaths/vet/injury) → **preserve through the cutover** (remap + one re-import).
+- **Departed-horse data** (verified): only 2 of the 6 have any K data, both **notes documenting their deaths** (Winter Moon, Gidget's Beach Baby) — no photos/bands lost on deletion. Keep those 2 death-notes in our authoring changelog.
+- **`region` dating** — add `region_observed` (recommended), backfill to 2026-06-10.
+- **Band-remove fix approach** — option (b), dated departure marker (§11).
 
-Pending input (tomorrow, with K's backup):
-- **Notes** — confirmed **personal/local, never canon** (§0.1). Only open call: preserve them through the cutover (remap + one re-import) vs. treat as disposable — based on how many/how useful they are.
-- **Data attached to the 6 departed horses** — keep anything valuable before deletion.
-
-_No remaining blockers to start Phase 0 the moment the backup file lands._
+Pending (need it in-hand to act, not decisions):
+- Nothing blocking. Phase 0 is ready to start (backup ✓ received). First implementation step next session: scaffold `tools/curator/` + run the 15 photos through crop+watermark.
 
 ## 11. Known bugs / fixes
 
 - **Band "remove" doesn't work** (reported by Kristina — a horse that leaves a band can't be removed from the display). **Root cause:** `_editBand` ([horse_detail_screen.dart:197-203](horse_app/lib/screens/horse_detail_screen.dart#L197-L203)) only **adds** still-selected horses via `addToBand`; it never deletes deselected ones. `removeBandEntry()` ([data_service.dart:267](horse_app/lib/services/data_service.dart#L267)) exists but has **no callers**. Because `getCurrentBandMembers()` keeps the latest-dated entry per horse, the stale membership persists.
   - **Fix options:** (a) quick — in `_editBand`, delete entries for `removedIds = existingIds − selectedIds`; or (b) better, consistent with the dated/region snapshot model — write a **departure marker** (e.g. a `left`-dated entry) so history is preserved and `getCurrentBandMembers()` excludes departed horses.
-  - **Priority:** worth fixing **soon** — it's a **non-schema change, safe to deploy during the collection phase**, and it stops stale memberships from polluting the band data we'll harvest. Recommend option (b).
+  - **Priority: PREREQUISITE** (see §9) — fix before/alongside Phase 0. Non-schema change, safe to deploy during collection; stops stale memberships from polluting future harvests. Recommend option (b).
