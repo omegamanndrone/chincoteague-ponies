@@ -18,6 +18,9 @@ horses.db
 # Kristina's device backup — personal data, never commit/publish
 kristina_data/
 
+# Curator ingest output — extracted photo originals + personal notes
+tools/curator/out/
+
 # OS
 .DS_Store
 Thumbs.db
