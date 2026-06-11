@@ -168,3 +168,9 @@ Pending input (tomorrow, with K's backup):
 - **Data attached to the 6 departed horses** — keep anything valuable before deletion.
 
 _No remaining blockers to start Phase 0 the moment the backup file lands._
+
+## 11. Known bugs / fixes
+
+- **Band "remove" doesn't work** (reported by Kristina — a horse that leaves a band can't be removed from the display). **Root cause:** `_editBand` ([horse_detail_screen.dart:197-203](horse_app/lib/screens/horse_detail_screen.dart#L197-L203)) only **adds** still-selected horses via `addToBand`; it never deletes deselected ones. `removeBandEntry()` ([data_service.dart:267](horse_app/lib/services/data_service.dart#L267)) exists but has **no callers**. Because `getCurrentBandMembers()` keeps the latest-dated entry per horse, the stale membership persists.
+  - **Fix options:** (a) quick — in `_editBand`, delete entries for `removedIds = existingIds − selectedIds`; or (b) better, consistent with the dated/region snapshot model — write a **departure marker** (e.g. a `left`-dated entry) so history is preserved and `getCurrentBandMembers()` excludes departed horses.
+  - **Priority:** worth fixing **soon** — it's a **non-schema change, safe to deploy during the collection phase**, and it stops stale memberships from polluting the band data we'll harvest. Recommend option (b).
