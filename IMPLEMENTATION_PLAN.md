@@ -170,6 +170,11 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 
 Phase 0 pipeline is built (`ingest → crop → make_changeset → console → merge → build_assets`). Ordered path forward:
 
+0. **⚡ QUICK WIN — deploy the band fix to Kristina (do first next session).** The band-remove fix (commit `77552ea`) is ready and **non-schema** (safe: her IndexedDB persists, no wipe). Shipping it lets her use working "leave band" + add more photos → then a fresh backup → curator review (her idea, good loop). **Blocker: hosting details are lost** — must reconstruct. What we know: app is live on **GitHub Pages**, she uses it (PWA on iPad); but **this local clone has NO git remote** (`git remote -v` empty), and no repo URL / branch / deploy method is recorded anywhere. Reconstruct next session:
+   - Sign into GitHub → find the repo (likely pony/horse-named) → **Settings → Pages** shows the source (branch + folder, e.g. `gh-pages` or `main`/`docs`) or an Actions workflow.
+   - Add it back to this clone: `git remote add origin <url>` (confirm `master` vs `main`).
+   - Build + deploy: `cd horse_app && flutter build web` → publish `build/web` per the Pages source method.
+   - Her PWA picks it up via service worker on next load (maybe a refresh or two). **Record the repo URL + deploy steps in memory so this is never lost again.**
 1. **Kristina reviews** the changeset in the console (`tools/curator/.venv/Scripts/python console.py`) → clicks **Merge**. This populates the authoring DB's `field_photos` / `bands` / `region_observations` (pedigree-keyed). _Gate — nothing canon until this happens._
 2. **Re-run `build_assets.py`** (dry run) — now `bands[]`/`regions[]`/field `photos[]` fill in and field crops copy to `out/build/photos/`. Spot-check the JSON.
 3. **Phase 1 cutover** (one-time, do soon while on-device data is small):
