@@ -103,24 +103,32 @@ def ingest(backup_path: Path, out_dir: Path, db_path: Path) -> dict:
 
     # --- bands (remap BOTH ids; mark current vs stale per mare) -------------
     raw_bands = backup.get("bands", {})
-    by_mare: dict[int, list[tuple[str, int]]] = defaultdict(list)  # mare_local -> [(date, stallion_local)]
+    # mare_local -> [(date, stallion_local, status)]. status defaults to "present";
+    # "left" markers (written by the app's band-remove fix) are departures, not
+    # memberships -- they decide "current" but never enter canon.
+    by_mare: dict[int, list[tuple[str, int, str]]] = defaultdict(list)
     valid_band_keys: list[str] = []
     for key, val in raw_bands.items():
         mare, stallion = val["horse_id"], val["stallion_id"]
         if not (require(mare, "band mare") and require(stallion, "band stallion")):
             continue
         valid_band_keys.append(key)
-        by_mare[mare].append((val["date_recorded"], stallion))
+        by_mare[mare].append((val["date_recorded"], stallion, val.get("status", "present")))
 
-    current_stallion: dict[int, int] = {  # mare_local -> stallion_local of latest sighting
-        mare: max(sightings)[1] for mare, sightings in by_mare.items()
-    }
+    # Latest-dated entry per mare decides her current band; if it's a departure
+    # ("left"), she currently has no band.
+    latest_by_mare = {mare: max(sightings) for mare, sightings in by_mare.items()}
     bands: list[dict] = []
     for key in valid_band_keys:
         val = raw_bands[key]
+        if val.get("status", "present") == "left":
+            continue  # departure marker -- not a canon membership
         mare, stallion, date = val["horse_id"], val["stallion_id"], val["date_recorded"]
         mh, sh = rm.horse(mare), rm.horse(stallion)
-        is_current = current_stallion[mare] == stallion
+        _ld, ls, lstatus = latest_by_mare[mare]
+        # Current unless superseded by a DIFFERENT stallion later (repeated same-
+        # stallion sightings are all valid history), or the mare has since departed.
+        is_current = lstatus != "left" and stallion == ls
         bands.append({
             "remapped_key": f"{mh.pedigree_id}_{sh.pedigree_id}_{date}",
             "mare_pedigree_id": mh.pedigree_id, "stallion_pedigree_id": sh.pedigree_id,
@@ -129,7 +137,7 @@ def ingest(backup_path: Path, out_dir: Path, db_path: Path) -> dict:
             "date_recorded": date, "is_current": is_current,
         })
     for mare, sightings in by_mare.items():
-        if len({s for _, s in sightings}) > 1:
+        if len({s for _, s, st in sightings if st != "left"}) > 1:
             mh = rm.horse(mare)
             warnings.append(
                 f"band: mare {mh.name} (ped {mh.pedigree_id}) banded with multiple "

@@ -196,40 +196,53 @@ class DataService {
 
   // --- Bands ---
 
-  Future<void> addToBand(int horseId, int stallionId, String date) async {
+  Future<void> addToBand(int horseId, int stallionId, String date,
+      {String status = 'present'}) async {
     final key = '${horseId}_${stallionId}_$date';
     await _bandBox.put(key, {
       'horse_id': horseId,
       'stallion_id': stallionId,
       'date_recorded': date,
+      'status': status,
     });
   }
 
-  List<BandMember> getCurrentBandMembers(int stallionId) {
-    final members = <int, BandMember>{};
+  /// Record a dated departure marker for a horse that left the band. History is
+  /// preserved (the prior membership entries stay); getCurrentBandMembers stops
+  /// showing the horse because its latest-dated entry is now a 'left' marker.
+  Future<void> markBandDeparture(int horseId, int stallionId, String date) async {
+    await addToBand(horseId, stallionId, date, status: 'left');
+  }
 
+  List<BandMember> getCurrentBandMembers(int stallionId) {
+    // First find the latest-dated entry per horse (membership OR departure)...
+    final latest = <int, Map<String, dynamic>>{};
     for (final key in _bandBox.keys) {
       final entry = Map<String, dynamic>.from(_bandBox.get(key));
-      if (entry['stallion_id'] == stallionId) {
-        final horseId = entry['horse_id'] as int;
-        final date = entry['date_recorded'] as String;
-
-        // Keep the most recent entry per horse
-        if (!members.containsKey(horseId) ||
-            date.compareTo(members[horseId]!.dateRecorded) > 0) {
-          final horse = getHorse(horseId);
-          if (horse != null) {
-            members[horseId] = BandMember(
-              horseId: horseId,
-              name: horse.name,
-              sex: horse.sex,
-              color: horse.color,
-              dateRecorded: date,
-            );
-          }
-        }
+      if (entry['stallion_id'] != stallionId) continue;
+      final horseId = entry['horse_id'] as int;
+      final date = entry['date_recorded'] as String;
+      final prev = latest[horseId];
+      if (prev == null || date.compareTo(prev['date_recorded'] as String) > 0) {
+        latest[horseId] = entry;
       }
     }
+
+    // ...then include only horses whose latest entry is not a departure.
+    final members = <int, BandMember>{};
+    latest.forEach((horseId, entry) {
+      if ((entry['status'] ?? 'present') == 'left') return;
+      final horse = getHorse(horseId);
+      if (horse != null) {
+        members[horseId] = BandMember(
+          horseId: horseId,
+          name: horse.name,
+          sex: horse.sex,
+          color: horse.color,
+          dateRecorded: entry['date_recorded'] as String,
+        );
+      }
+    });
 
     // Sort: stallions first, then mares, then others
     final sorted = members.values.toList()

@@ -202,6 +202,14 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
       await _data.addToBand(id, stallion.id!, today);
     }
 
+    // Horses deselected since last time left the band: write a dated departure
+    // marker (never the stallion himself) so they drop off the current roster
+    // while their history is preserved.
+    final removedIds = existingIds.difference(selectedIds)..remove(stallion.id!);
+    for (final id in removedIds) {
+      await _data.markBandDeparture(id, stallion.id!, today);
+    }
+
     setState(() => _loading = true);
     _loadBandData();
     final refreshed = _data.getHorse(_horse.id!);
