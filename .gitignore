@@ -14,6 +14,9 @@ horse_photos/
 extracted_photos/
 horse_app/assets/photos/
 horses.db
+horses.db.bak_*
+horses.db-journal
+horses.db-wal
 
 # Kristina's device backup — personal data, never commit/publish
 kristina_data/
