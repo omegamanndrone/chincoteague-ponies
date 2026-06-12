@@ -26,11 +26,18 @@ class PhotoViewerScreen extends StatelessWidget {
             padding: const EdgeInsets.only(right: 16),
             child: Chip(
               label: Text(
-                source == 'user' ? 'Your Photo' : 'Book Photo',
+                source == 'user'
+                    ? 'Your Photo'
+                    : source == 'field'
+                        ? '© K. Kent'
+                        : 'Book Photo',
                 style: const TextStyle(fontSize: 12),
               ),
-              backgroundColor:
-                  source == 'user' ? const Color(0xFF2E7D32) : Colors.brown,
+              backgroundColor: source == 'user'
+                  ? const Color(0xFF2E7D32)
+                  : source == 'field'
+                      ? const Color(0xFF1B6B32)
+                      : Colors.brown,
               labelStyle: const TextStyle(color: Colors.white),
             ),
           ),

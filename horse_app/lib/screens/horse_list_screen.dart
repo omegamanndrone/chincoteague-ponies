@@ -46,7 +46,9 @@ class _HorseListScreenState extends State<HorseListScreen> {
     for (final horse in _horses) {
       final photo = _data.getFirstPhotoForHorse(horse.id!);
       if (photo != null) {
-        if (photo.source == 'book') {
+        // Canon (book + Kristina's 'field' crops) loads from bundled assets;
+        // the user's own on-device photos come from blob storage.
+        if (photo.isCanon) {
           try {
             final bytes =
                 await rootBundle.load('assets/photos/${photo.filename}');

@@ -39,7 +39,9 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
     // Load photo bytes
     _photoBytes.clear();
     for (final photo in _photos) {
-      if (photo.source == 'book') {
+      // Canon photos (book + Kristina's harvested 'field' crops) are bundled in
+      // assets; only the user's own on-device photos live in blob storage.
+      if (photo.isCanon) {
         try {
           final bytes =
               await rootBundle.load('assets/photos/${photo.filename}');
@@ -253,9 +255,10 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
   }
 
   Widget _buildPhotoGallery() {
-    final bookPhotos = _photos.where((p) => p.source == 'book').toList();
+    // _photos already arrives field/user-first, book last (DataService priority);
+    // use it as-is so Kristina's harvested 'field' crops show and lead.
+    final orderedPhotos = _photos;
     final userPhotos = _photos.where((p) => p.source == 'user').toList();
-    final orderedPhotos = [...bookPhotos, ...userPhotos];
 
     if (orderedPhotos.isEmpty) {
       return Container(

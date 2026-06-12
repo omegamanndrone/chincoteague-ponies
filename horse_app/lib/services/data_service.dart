@@ -31,10 +31,16 @@ class DataService {
   late Box _userPhotoBlobsBox; // user photo binary data
   bool _initialized = false;
 
-  Future<void> init() async {
+  Future<void> init({String? hivePath}) async {
     if (_initialized) return;
 
-    await Hive.initFlutter();
+    // hivePath is a test seam (Hive.init on a temp dir); production uses
+    // initFlutter (IndexedDB on web / app-docs on mobile).
+    if (hivePath != null) {
+      Hive.init(hivePath);
+    } else {
+      await Hive.initFlutter();
+    }
     _meta = await Hive.openBox('_meta');
     _horsesBox = await Hive.openBox('horses');
     _canonBandBox = await Hive.openBox('canonBands');
