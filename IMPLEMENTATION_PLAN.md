@@ -183,7 +183,7 @@ Phase 0 pipeline is built (`ingest → crop → make_changeset → console → m
    c. Deploy to GitHub Pages → her device self-overwrites on the `data_version` bump; **remap her 5 notes old→pedigree and re-import once**.
 4. **Phase 2 — recurring re-scrape** (steady state): first **unblock `herds.php`** Current/Past toggle (departed-detection reads the Past view — see `pedigree-site-scraping` memory); then `scrape_pedigrees.py` + `parse_pedigree.py` → wire into the same console; add the 11 missing VA ponies; delete departed (keep/discard gate, §8); resolve `sire_id`/`dam_id` + §5 enrichment from the scrape.
 
-**Open question to settle with you:** visual canon-vs-user cue, or keep it seamless (§10).
+**~~Open question~~ RESOLVED:** visual canon-vs-user cue → thin left accent rule on local-only items, one reserved accent color app-wide (§10). Non-blocking polish.
 **Open with Kristina:** her collection workflow + the 2 region gaps (Pappy's Pony, Angelique's Tigress Warrior).
 
 ## 7. App changes (Flutter)
@@ -230,11 +230,12 @@ Resolved:
 - **No in-app delete for incorrect band entries** — corrections happen at our Curator review gate (Reject on ingest), not on-device. Keeps the app to add/depart only.
 - **Built asset shape** — separate top-level pedigree-keyed sections (`horses`/`photos`/`bands`/`regions`), not embedded; app overlays user edits on canon (§6). Chosen for clean add/delete under recurring re-scrapes.
 - **Cutover timing** — the one-time id flip is a single bridge, **not** a recurring job; do it **soon**, bundled with this first harvest, while on-device data is small (§4).
+- **Visual canon-vs-user cue** — **YES, show it** (worth it for the sellable product), via a **thin left accent rule** (2–3px) on local-only items; canon stays clean. One reserved accent color used **only** for provenance, app-wide (cards, photo tiles, band rows), with a one-line legend. Reads off the existing `source` token (`book`/`field`=canon, `user`=local), so it rides on the photo-priority plumbing (near-zero cost). Doubles as a "not yet harvested to canon" signal for Kristina. Non-blocking polish — build alongside or after the Phase 1 plumbing.
 
 **Phase 0 status:** curator pipeline BUILT — `ingest_backup` → `crop_photos` (YOLO + © K. Kent) → `make_changeset` → Flask `console` (review) → `merge` (additive, pedigree-keyed). 15 photos cropped (14 detected), 125 changeset items. Band-remove bug fixed (§11). Nothing merged yet — awaiting Kristina's review.
 
 Pending:
-- **Visual canon-vs-user distinction (open question):** the storage split is decided; separately, do we want a *visual* cue marking canon vs the user's own annotations (maybe worth it for the sellable product), or keep it seamless like notes/herd are today? Not blocking.
+- ~~**Visual canon-vs-user distinction**~~ — **RESOLVED (see §10 Resolved):** show it via a thin left accent rule on local-only items, one reserved accent color app-wide. Non-blocking polish.
 - **Kristina's console review** is the gate before any real Merge — nothing reaches the authoring DB on defaults until reviewed + Merge clicked.
 - **Region gaps** — Pappy's Pony & Angelique's Tigress Warrior have photos/bands but no N/S; needs Kristina to assign (we can't).
 - **Phase 2 blocker** — `herds.php` Current/Past toggle stopped responding to scripts; departed-detection (reads the Past view) must be solved before re-scrape deletions work (see `pedigree-site-scraping` memory).

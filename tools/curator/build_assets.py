@@ -51,6 +51,10 @@ ENRICH_FIELDS = [
     "breeder", "owner", "auction_number", "registry", "registry_number",
     "dsc_photo_url",
 ]
+# §5 pedigree-chart flag codes (M/B/F/H). Emitted as null until the scrape
+# resolves them, so the JSON shape is FINAL now and the app never needs a second
+# device migration to gain these columns. (★ full-sibling is derived, not stored.)
+LINEAGE_FLAGS = ["misty_descendant", "buyback", "feral", "half_chincoteague"]
 # Columns we deliberately drop from the shipped record (build-time only / superseded).
 DROP_COLS = {"id", "herd", "pdf_page_data", "pdf_page_photo"}
 
@@ -70,9 +74,14 @@ def build(db_path: Path, out_dir: Path) -> dict:
     horse_cols = {r[1] for r in con.execute("PRAGMA table_info(horses)")}
 
     # --- horses[] : re-keyed to pedigree_id ------------------------------
+    # id_map (local id -> pedigree_id) is emitted as a SEPARATE, non-personal
+    # asset (id_remap.json) the app uses once at cutover to remap the user's
+    # local-only notes onto the new keys — see data_service._restoreRemappedNotes.
     horses = []
+    id_map: dict[str, int] = {}
     for row in con.execute("SELECT * FROM horses"):
         ped = rm.to_pedigree(row["id"])
+        id_map[str(row["id"])] = ped
         rec: dict = {"id": ped}
         for col in horse_cols:
             if col not in DROP_COLS:
@@ -81,6 +90,8 @@ def build(db_path: Path, out_dir: Path) -> dict:
         rec["dam_id"] = None
         for f in ENRICH_FIELDS:
             rec.setdefault(f, row[f] if f in horse_cols else None)
+        for f in LINEAGE_FLAGS:
+            rec.setdefault(f, bool(row[f]) if f in horse_cols else None)
         horses.append(rec)
     horses.sort(key=lambda h: h["id"])
 
@@ -117,6 +128,11 @@ def build(db_path: Path, out_dir: Path) -> dict:
     (out_dir / "horses_data.json").write_text(
         json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
+    # Public-safe id map (numbers only — no personal data). Bundled so the app
+    # can remap the user's local notes old->pedigree on the one-time cutover.
+    (out_dir / "id_remap.json").write_text(
+        json.dumps(id_map, indent=2), encoding="utf-8")
+
     # --- copy field-photo crops into the target photos dir ---------------
     photos_out = out_dir / "photos"
     copied = 0
@@ -130,7 +146,7 @@ def build(db_path: Path, out_dir: Path) -> dict:
     return {
         "horses": len(horses), "photos": len(photos), "photos_field": n_field,
         "photos_book": len(photos) - n_field, "bands": len(bands), "regions": len(regions),
-        "field_crops_copied": copied,
+        "field_crops_copied": copied, "id_remap": len(id_map),
         "out_json": out_dir / "horses_data.json",
     }
 
@@ -154,6 +170,7 @@ def main() -> None:
           f"bands {rep['bands']} | regions {rep['regions']}")
     print(f"  field crops copied: {rep['field_crops_copied']} "
           f"(book photo files not copied — assumed already in {BOOK_PHOTOS})")
+    print(f"  id_remap.json: {rep['id_remap']} local->pedigree entries (non-personal)")
     if rep["bands"] == 0 and rep["regions"] == 0 and rep["photos_field"] == 0:
         print("  note: canon tables empty/absent — run a Curator merge first to populate "
               "bands/regions/field photos (this run proves the horse re-keying).")
