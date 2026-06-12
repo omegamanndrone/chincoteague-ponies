@@ -253,7 +253,13 @@ def img(kind, filename):
     folder = {"original": OUT / "photos_original", "cropped": OUT / "photos_cropped"}.get(kind)
     if folder is None:
         return "bad kind", 404
-    return send_from_directory(folder, filename)
+    # Review crops get re-generated in place (e.g. watermark tweaks) under the
+    # SAME filename, so tell the browser never to cache them — otherwise a
+    # re-crop appears to "do nothing" until a hard refresh.
+    resp = send_from_directory(folder, filename)
+    resp.headers["Cache-Control"] = "no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 @app.route("/merge", methods=["POST"])
