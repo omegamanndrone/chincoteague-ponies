@@ -41,6 +41,9 @@ DEFAULT_CONF = 0.25            # ground-level tourist photos are clear; lower th
 DEFAULT_BUFFER = 0.06          # expand box 6% of its w/h, clamped (plan default)
 CREDIT = "K. Kent"
 WATERMARK_TEXT = f"© {CREDIT}"
+WATERMARK_FRAC = 0.045        # font size as a fraction of image HEIGHT (consistent
+                              # apparent size — app + console display height-normalized)
+WATERMARK_MIN = 13            # px floor for legibility on small crops
 
 
 def largest_horse_box(model, pil_img, conf):
@@ -76,8 +79,7 @@ def expand_and_clamp(box, w, h, buffer):
     return int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))
 
 
-def _watermark_font(img_w):
-    size = max(18, img_w // 28)  # scale to image; visible but not dominant
+def _load_font(size):
     for name in ("arialbd.ttf", "arial.ttf", "DejaVuSans-Bold.ttf", "DejaVuSans.ttf"):
         try:
             return ImageFont.truetype(name, size)
@@ -87,19 +89,28 @@ def _watermark_font(img_w):
 
 
 def apply_watermark(crop):
-    """Bottom-right '(c) K. Kent' — white at ~78% with a dark outline so it
-    reads on both light and dark coats. Tunable via the alpha/size constants."""
+    """Bottom-right '(c) K. Kent', sized to a fixed fraction of image HEIGHT so it
+    looks the same on every crop regardless of shape (the app gallery and the
+    review console both display photos height-normalized; width-based sizing made
+    wide crops shout and portrait crops whisper). White at ~78% over a dark
+    outline so it reads on light and dark coats; outline + padding scale with the
+    font so the proportions hold. Tunable via WATERMARK_FRAC / WATERMARK_MIN."""
     crop = crop.convert("RGBA")
     overlay = Image.new("RGBA", crop.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
-    font = _watermark_font(crop.width)
+    size = max(WATERMARK_MIN, round(crop.height * WATERMARK_FRAC))
+    font = _load_font(size)
+    outline = max(1, size // 12)
+    pad = max(4, size // 2)
     box = draw.textbbox((0, 0), WATERMARK_TEXT, font=font)
     tw, th = box[2] - box[0], box[3] - box[1]
-    pad = max(8, crop.width // 90)
-    x, y = crop.width - tw - pad * 2, crop.height - th - pad * 2
+    x = crop.width - tw - pad - outline
+    y = crop.height - th - pad - outline
     # dark outline for contrast on light coats, then the mark at ~78% opacity
-    for ox, oy in ((-2, -2), (2, -2), (-2, 2), (2, 2), (0, -2), (0, 2), (-2, 0), (2, 0)):
-        draw.text((x + ox, y + oy), WATERMARK_TEXT, font=font, fill=(0, 0, 0, 150))
+    for ox in range(-outline, outline + 1):
+        for oy in range(-outline, outline + 1):
+            if ox or oy:
+                draw.text((x + ox, y + oy), WATERMARK_TEXT, font=font, fill=(0, 0, 0, 150))
     draw.text((x, y), WATERMARK_TEXT, font=font, fill=(255, 255, 255, 200))
     return Image.alpha_composite(crop, overlay).convert("RGB")
 
