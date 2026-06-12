@@ -112,6 +112,27 @@ _(No `life_status` column: the canonical dataset is current VA/MD herds only. Wh
 
 New `horse_markings` table (`horse_id`, `marking`) for marking-based search. Progeny/siblings are **derived by query** (`WHERE sire_id=? OR dam_id=?`) — no extra tables, no card clutter.
 
+### Field reference: today (book) → post-refresh (display design TBD later)
+
+What a horse record holds now vs. what the refresh adds. (Display/layout is a separate, later discussion — this is just the data inventory.)
+
+| Area | Today (book-derived, flat row) | Post-refresh | Origin |
+|---|---|---|---|
+| Identity | `id` (local 1–143), `name`, `nickname`, `qr_pedigree_url` | `id` = **pedigree_id**; name/nickname kept | re-key |
+| Physical | `color`, `sex`, `brand`, `eye_color`, `birth_year`, `birth_date` | same, **+ `coat_pattern`, `markings`, `genotype`, `birth_location`** | website prose |
+| Lineage | `sire`, `dam` (name strings only) | **+ `sire_id`/`dam_id`** (real pedigree links); names kept | chart links |
+| Lineage flags | — | **`misty_descendant`, `buyback`, `feral`, `half_chincoteague`** (bool) | chart M/B/F/H |
+| Provenance | `auction_price`, `buyback_donor`, `book_info` | **+ `breeder`, `owner`, `auction_number`, `registry`, `registry_number`** | website prose |
+| Herd | `herd` (empty in canon) | **`state`** (VA/MD, website) on the row; `region` is its own dated section | roster / Kristina |
+| Media | `qr_video_url` | **+ `dsc_photo_url`** (link-out) | website |
+| Build cruft | `book_page`, `pdf_page_data`, `pdf_page_photo` | **dropped** at cutover | — |
+| **Photos** (separate) | `horse_photos`: 280 rows, all `source='book'` | **+ field crops** (`source='field'`, `credit='K. Kent'`), field-first | Kristina |
+| **Bands** (separate) | — (none in canon; local-only today) | **`bands[]`** dated mare→stallion | Kristina |
+| **Regions** (separate) | — | **`regions[]`** dated N/S | Kristina (not website) |
+| **Derived** (stored nowhere) | — | progeny, siblings (**full ★ vs half** via parent match), family tree, marking search | query |
+
+Three origins, three lifecycles: **website public fields** refresh every scrape; **Kristina's canon** (photos/bands/regions) is preserved across scrapes; **derived views** are computed on demand. Post-scrape rows are richer but **unevenly populated** — each field fills only when that horse's page states it (e.g. MD/NPS ponies: NPS registry, no auction/buyback; `region` is always Kristina-only).
+
 ## 6. Curation & update tooling (the reviewable pipeline)
 
 Both recurring jobs — ingesting Kristina's backup and re-scraping the website — reduce to the **same shape**: a source produces a **changeset** of proposed items; we review each item Accept/Reject; accepted items merge into the authoring DB; assets rebuild.
