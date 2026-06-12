@@ -73,6 +73,10 @@ BASE = """
  button.b.on-accept{background:#1b6b32;color:#fff;border-color:#1b6b32}
  button.b.on-reject{background:#9a2222;color:#fff;border-color:#9a2222}
  button.b.on-skip{background:#555;color:#fff;border-color:#555}
+ .bulkbar{margin:0 0 14px;display:flex;gap:8px;align-items:center;font-size:13px;color:#555}
+ button.b2{padding:6px 14px;border:1px solid #cfd4da;background:#fff;border-radius:7px;cursor:pointer;font-weight:600;font-size:13px}
+ button.b2.acc:hover{background:#1b6b32;color:#fff;border-color:#1b6b32}
+ button.b2.rej:hover{background:#9a2222;color:#fff;border-color:#9a2222}
  table{border-collapse:collapse;width:100%;background:#fff;border-radius:8px;overflow:hidden}
  td,th{padding:8px 11px;border-bottom:1px solid #eef0f2;text-align:left;font-size:14px}
  th{background:#eef2ef} tr.stale td{color:#9a2222}
@@ -96,6 +100,11 @@ function decide(id,action,el){
    card.querySelectorAll('button.b').forEach(b=>b.className='b');
    el.classList.add('on-'+action);
  });
+}
+function decideAll(type,action){
+ if(!confirm('Set ALL '+type+' items to '+action.toUpperCase()+'? (you can still flip individual ones after)'))return;
+ fetch('/decide_bulk',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({type:type,action:action})}).then(r=>r.json()).then(_=>location.reload());
 }
 function doMerge(){
  if(!confirm('Merge all ACCEPTED items into the authoring DB? (additive, idempotent)'))return;
@@ -154,6 +163,11 @@ def review(t):
     state = load_state()
     items = [it for it in cs["items"] if it["type"] == t]
     body = f'<h2>{t.capitalize()}s <span class=meta>({len(items)})</span></h2>'
+    if t != "note":
+        body += (f'<div class=bulkbar>Bulk: '
+                 f'<button class="b2 acc" onclick="decideAll(\'{t}\',\'accept\')">Accept all</button>'
+                 f'<button class="b2 rej" onclick="decideAll(\'{t}\',\'reject\')">Reject all</button>'
+                 f'<span>— or decide each below</span></div>')
     if t == "photo":
         body += '<div class=grid>'
         for it in items:
@@ -216,6 +230,21 @@ def decide():
     state[data["id"]] = data["action"]
     save_state(state)
     return jsonify(ok=True, id=data["id"], action=data["action"])
+
+
+@app.route("/decide_bulk", methods=["POST"])
+def decide_bulk():
+    data = request.get_json(force=True)
+    t, action = data["type"], data["action"]
+    cs = load_changeset()
+    state = load_state()
+    n = 0
+    for it in cs["items"]:
+        if it["type"] == t:
+            state[it["id"]] = action
+            n += 1
+    save_state(state)
+    return jsonify(ok=True, count=n)
 
 
 @app.route("/img/<kind>/<path:filename>")
