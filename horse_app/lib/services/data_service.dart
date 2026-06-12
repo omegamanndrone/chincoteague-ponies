@@ -333,10 +333,10 @@ class DataService {
   /// and a band she adds locally that canon doesn't have still shows.
   Iterable<Map<String, dynamic>> _bandEntries() sync* {
     for (final key in _canonBandBox.keys) {
-      yield Map<String, dynamic>.from(_canonBandBox.get(key));
+      yield {...Map<String, dynamic>.from(_canonBandBox.get(key)), '_local': false};
     }
     for (final key in _bandBox.keys) {
-      yield Map<String, dynamic>.from(_bandBox.get(key));
+      yield {...Map<String, dynamic>.from(_bandBox.get(key)), '_local': true};
     }
   }
 
@@ -410,6 +410,7 @@ class DataService {
           'stallion_id': entry['stallion_id'],
           'date_recorded': entry['date_recorded'],
           'status': entry['status'] ?? 'present',
+          'is_local': entry['_local'] ?? false, // user's own edit vs. canon
           'stallion_name': stallion?.name ?? 'Unknown',
         });
       }

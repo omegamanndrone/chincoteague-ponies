@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/data_service.dart';
 import '../models/horse.dart';
 import '../models/band.dart';
+import '../theme/provenance.dart';
 import 'photo_viewer_screen.dart';
 
 class HorseDetailScreen extends StatefulWidget {
@@ -242,6 +243,7 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
                   if (_horse.qrVideoUrl != null ||
                       _horse.qrPedigreeUrl != null)
                     _buildLinksCard(),
+                  if (_hasLocalData()) Provenance.legend(),
                   const SizedBox(height: 24),
                 ],
               ),
@@ -252,6 +254,15 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
         child: const Icon(Icons.camera_alt, color: Colors.white),
       ),
     );
+  }
+
+  /// Whether this horse carries any of the user's own local data — drives
+  /// whether the provenance legend is worth showing.
+  bool _hasLocalData() {
+    return _horse.notes != null ||
+        _horse.herd != null ||
+        _photos.any((p) => p.source == 'user') ||
+        _bandHistory.any((e) => e['is_local'] == true);
   }
 
   Widget _buildPhotoGallery() {
@@ -310,9 +321,10 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
                   margin: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
+                    // User's own (not-yet-harvested) photos carry the
+                    // provenance accent; canon book/field photos stay clean.
                     border: photo.source == 'user'
-                        ? Border.all(
-                            color: const Color(0xFF2E7D32), width: 2)
+                        ? Border.all(color: Provenance.local, width: 2)
                         : null,
                   ),
                   child: ClipRRect(
@@ -355,6 +367,13 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
           Expanded(
             child: OutlinedButton.icon(
               onPressed: _setHerd,
+              // Herd is the user's own observational assignment — accent it
+              // once set.
+              style: _horse.herd != null
+                  ? OutlinedButton.styleFrom(
+                      foregroundColor: Provenance.local,
+                      side: const BorderSide(color: Provenance.local))
+                  : null,
               icon: const Icon(Icons.location_on),
               label: Text(_horse.herd != null
                   ? '${_horse.herd![0].toUpperCase()}${_horse.herd!.substring(1)} Herd'
@@ -458,20 +477,23 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
                       fontWeight: FontWeight.w600,
                       color: Colors.grey[700])),
               const SizedBox(height: 4),
-              ...recentHistory.map((entry) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      children: [
-                        Icon(Icons.circle, size: 8, color: Colors.grey[400]),
-                        const SizedBox(width: 8),
-                        Text(entry['stallion_name'] as String,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w500)),
-                        const Spacer(),
-                        Text(entry['date_recorded'] as String,
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.grey[500])),
-                      ],
+              ...recentHistory.map((entry) => Provenance.rule(
+                    isLocal: entry['is_local'] == true,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Icon(Icons.circle, size: 8, color: Colors.grey[400]),
+                          const SizedBox(width: 8),
+                          Text(entry['stallion_name'] as String,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w500)),
+                          const Spacer(),
+                          Text(entry['date_recorded'] as String,
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[500])),
+                        ],
+                      ),
                     ),
                   )),
             ],
@@ -562,12 +584,21 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
   }
 
   Widget _buildNotesCard() {
+    final hasNotes = _horse.notes != null;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: InkWell(
         onTap: _editNotes,
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            // Notes are always the user's own — accent them when present.
+            border: hasNotes
+                ? const Border(
+                    left: BorderSide(color: Provenance.local, width: 3))
+                : null,
+          ),
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
