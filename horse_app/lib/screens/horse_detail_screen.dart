@@ -122,11 +122,9 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
 
     if (result == null) return;
 
-    if (result.isEmpty) {
-      await _data.clearHerd(_horse.id!);
-    } else {
-      await _data.updateUserData(_horse.id!, herd: result);
-    }
+    // N/S is the dated canon `region` now; an edit here is the user's LOCAL
+    // override (empty -> clear the override and fall back to the canon value).
+    await _data.updateUserData(_horse.id!, region: result);
     final refreshed = _data.getHorse(_horse.id!);
     if (refreshed != null) setState(() => _horse = refreshed);
   }
@@ -260,7 +258,7 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
   /// whether the provenance legend is worth showing.
   bool _hasLocalData() {
     return _horse.notes != null ||
-        _horse.herd != null ||
+        _data.isRegionUserOverride(_horse.id!) ||
         _photos.any((p) => p.source == 'user') ||
         _bandHistory.any((e) => e['is_local'] == true);
   }
@@ -367,16 +365,16 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
           Expanded(
             child: OutlinedButton.icon(
               onPressed: _setHerd,
-              // Herd is the user's own observational assignment — accent it
-              // once set.
-              style: _horse.herd != null
+              // Show the canon region (her harvested N/S); accent ONLY when it's
+              // her local override of canon, not canon itself.
+              style: _data.isRegionUserOverride(_horse.id!)
                   ? OutlinedButton.styleFrom(
                       foregroundColor: Provenance.local,
                       side: const BorderSide(color: Provenance.local))
                   : null,
               icon: const Icon(Icons.location_on),
-              label: Text(_horse.herd != null
-                  ? '${_horse.herd![0].toUpperCase()}${_horse.herd!.substring(1)} Herd'
+              label: Text(_horse.region != null
+                  ? '${_horse.region![0].toUpperCase()}${_horse.region!.substring(1)} Herd'
                   : 'Assign Herd'),
             ),
           ),
