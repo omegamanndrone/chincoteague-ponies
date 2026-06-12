@@ -115,9 +115,15 @@ def build(db_path: Path, out_dir: Path) -> dict:
             bands.append({"mare_id": r["mare_pedigree_id"],
                           "stallion_id": r["stallion_pedigree_id"],
                           "date_recorded": r["date_recorded"]})
+    # region_observations preserves dated history (a horse accrues a row per
+    # backup/scrape date); the app ships only the CURRENT snapshot, so emit the
+    # latest observation per horse.
     regions = []
     if _table_exists(con, "region_observations"):
-        for r in con.execute("SELECT pedigree_id, region, observed FROM region_observations"):
+        for r in con.execute(
+                "SELECT pedigree_id, region, observed FROM region_observations r "
+                "WHERE observed = (SELECT MAX(observed) FROM region_observations "
+                "WHERE pedigree_id = r.pedigree_id)"):
             regions.append({"id": r["pedigree_id"], "region": r["region"], "observed": r["observed"]})
     con.close()
 
