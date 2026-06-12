@@ -1,6 +1,6 @@
 # Chincoteague/Assateague Ponies App — Data Refresh, ID Conversion & Photo Pipeline
 
-_Updated 2026-06-10. Source site: `chincoteaguepedigrees.com` (static HTML, ISO-8859-1). Kristina's device backup received & verified (§3a/§3b). Next session: begin Phase 0 — scaffold `tools/curator/`._
+_Updated 2026-06-11. Source site: `chincoteaguepedigrees.com` (static HTML, ISO-8859-1). Phase 0 curator pipeline BUILT (ingest → crop → changeset → review console → merge); band-remove bug fixed. Next: Kristina reviews the changeset in the console, then the one-time pedigree_id cutover (Phase 1)._
 
 ## 0. Product context (shapes every decision)
 
@@ -79,6 +79,8 @@ This is **Flow 1** (her collected data → canon), distinct from how her device 
 
 ## 4. Phase 1 — Convert to `pedigree_id` as the canonical identifier
 
+**Framing — one-time bridge vs. the recurring loop (important):** the cutover is **not** one of the recurring update jobs. It is a single, structural **identifier migration** (arbitrary local id 1–143 → website `pedigree_id`) that happens **once, ever**, then never again. The recurring jobs — **ingest her backup** (harvest new photos/bands/regions, run whenever she's collected a batch) and **re-scrape the website** (add newborns / remove departed / refresh fields, run whenever the roster changes) — are the steady state; both are non-destructive "content updates" that preserve her local boxes. We pay the id flip once so every recurring run afterward has a stable, website-shared key (re-scrape matches by pedigree_id; relationships/family tree are pedigree_id; harvested data stays attached to the same horse across roster churn) instead of maintaining a fragile local↔pedigree mapping forever. **Do the flip soon, while her on-device data is still small** (64 herd assignments, 44 bands, 15 photos, 5 notes) — every month of collection makes the one-time device reload carry more. Bundle the flip with deploying this first harvest.
+
 - `pedigree_id` **becomes the `id`** everywhere: `horses_data.json`, Hive keys, sire/dam relationships. The old arbitrary local id (1–143) is retired.
 - Relationships are then trivial: `sire_id`/`dam_id` *are* pedigree ids; the family tree resolves with no indirection.
 - _(Deferred: a reserved id range for app-created horses the website hasn't catalogued. Not needed now — the app only annotates existing catalogued horses; new foals arrive via re-scrape. Revisit only if we add a "log an uncatalogued horse" feature.)_
@@ -133,6 +135,12 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 3. `make_changeset.py` — diff scrape/ingest against authoring `horses.db` → changeset for the console.
 4. `build_assets.py` — after merge, write/refresh `horses.db` → regenerate `assets/horses_data.json` (keyed by pedigree_id) + copy photo assets.
    - **MERGE semantics (critical for updates):** canon photos/bands/herds (from Kristina) are keyed by pedigree_id and must be **preserved/merged** on every re-scrape — scraping refreshes public fields only, never clobbers our unique content.
+   - **Built asset shape (decided):** `horses_data.json` keeps **separate, top-level, pedigree-keyed sections** rather than embedding the dated data inside each horse — chosen because the recurring re-scrape churns `horses[]` (add newborns, drop departed), and separate sections make add = append, delete = filter + prune dangling refs, without disturbing our unique canon:
+     - `horses[]` — `id` = pedigree_id; `sire_id`/`dam_id` (was name strings); enriched fields from §5 (`state`, `coat_pattern`, `markings`, `genotype`, `breeder`, `owner`, `auction_number`, `registry`, `registry_number`, `dsc_photo_url`). **`region` is NOT here** (it's dated → its own section).
+     - `photos[]` — `{horse_id, filename, source, credit}`; Kristina's field crops (`source:"field"`, `credit:"K. Kent"`) sort ahead of `book`; cropped files copied into `assets/photos/`.
+     - `bands[]` — `{mare_id, stallion_id, date_recorded}` (dated, from `bands` table).
+     - `regions[]` — `{id, region, observed}` (dated/ephemeral, from `region_observations`).
+   - **App-side overlay:** `bands[]`/`regions[]` load into **canon** boxes; the user's local edits overlay them at read-time, exactly as `getAllHorses()` already overlays user notes/herd onto canon ([data_service.dart:73-79](horse_app/lib/services/data_service.dart#L73-L79)). Extending that existing pattern to bands/regions is the "canon vs user box split."
 5. Validation: every current-herd pony present; spot-check 5 end-to-end; confirm Kristina's remapped data round-trips.
 
 ## 7. App changes (Flutter)
@@ -177,9 +185,16 @@ Resolved:
 - **Band-remove fix approach** — option (b), dated departure marker (§11). **✓ DONE.**
 - **Band/region = preserve all dated history** — keep every dated sighting/observation; the app surfaces *current* + truncates the card to the last 2 years. Curator **band default = Accept** (not reject-stale); "older sighting" entries are kept, not pruned.
 - **No in-app delete for incorrect band entries** — corrections happen at our Curator review gate (Reject on ingest), not on-device. Keeps the app to add/depart only.
+- **Built asset shape** — separate top-level pedigree-keyed sections (`horses`/`photos`/`bands`/`regions`), not embedded; app overlays user edits on canon (§6). Chosen for clean add/delete under recurring re-scrapes.
+- **Cutover timing** — the one-time id flip is a single bridge, **not** a recurring job; do it **soon**, bundled with this first harvest, while on-device data is small (§4).
 
-Pending (need it in-hand to act, not decisions):
-- Nothing blocking. Phase 0 is ready to start (backup ✓ received). First implementation step next session: scaffold `tools/curator/` + run the 15 photos through crop+watermark.
+**Phase 0 status:** curator pipeline BUILT — `ingest_backup` → `crop_photos` (YOLO + © K. Kent) → `make_changeset` → Flask `console` (review) → `merge` (additive, pedigree-keyed). 15 photos cropped (14 detected), 125 changeset items. Band-remove bug fixed (§11). Nothing merged yet — awaiting Kristina's review.
+
+Pending:
+- **Visual canon-vs-user distinction (open question):** the storage split is decided; separately, do we want a *visual* cue marking canon vs the user's own annotations (maybe worth it for the sellable product), or keep it seamless like notes/herd are today? Not blocking.
+- **Kristina's console review** is the gate before any real Merge — nothing reaches the authoring DB on defaults until reviewed + Merge clicked.
+- **Region gaps** — Pappy's Pony & Angelique's Tigress Warrior have photos/bands but no N/S; needs Kristina to assign (we can't).
+- **Phase 2 blocker** — `herds.php` Current/Past toggle stopped responding to scripts; departed-detection (reads the Past view) must be solved before re-scrape deletions work (see `pedigree-site-scraping` memory).
 
 ## 11. Known bugs / fixes
 
