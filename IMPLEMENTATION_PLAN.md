@@ -1,6 +1,6 @@
 # Chincoteague/Assateague Ponies App — Data Refresh, ID Conversion & Photo Pipeline
 
-_Updated 2026-06-11. Source site: `chincoteaguepedigrees.com` (static HTML, ISO-8859-1). Phase 0 curator pipeline BUILT (ingest → crop → changeset → review console → merge); band-remove bug fixed. Next: Kristina reviews the changeset in the console, then the one-time pedigree_id cutover (Phase 1)._
+_Updated 2026-06-12. Source site: `chincoteaguepedigrees.com` (static HTML, ISO-8859-1). **Phases 0 + 1 DONE and DEPLOYED** — curator pipeline built, band fix shipped, hosting reconstructed, and the one-time `pedigree_id` cutover is live + verified on Kristina's device (2026-06-12). The app now runs on `pedigree_id` with her 21 photos / 49 bands / 61 regions / 5 notes in canon. **Next: Phase 2 website scrape** (roster completion + enrichment), blocked on the `herds.php` Current/Past toggle._
 
 ## 0. Product context (shapes every decision)
 
@@ -166,22 +166,22 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
    - **App-side overlay:** `bands[]`/`regions[]` load into **canon** boxes; the user's local edits overlay them at read-time, exactly as `getAllHorses()` already overlays user notes/herd onto canon ([data_service.dart:73-79](horse_app/lib/services/data_service.dart#L73-L79)). Extending that existing pattern to bands/regions is the "canon vs user box split."
 5. Validation: every current-herd pony present; spot-check 5 end-to-end; confirm Kristina's remapped data round-trips.
 
-### 🍞 Breadcrumbs — concrete next steps from here (2026-06-11)
+### 🍞 Breadcrumbs — status & next steps (updated 2026-06-12)
 
-Phase 0 pipeline is built (`ingest → crop → make_changeset → console → merge → build_assets`). Ordered path forward:
+**Phases 0 + 1 are DONE and DEPLOYED** — app is live on `pedigree_id`, verified on Kristina's device 2026-06-12. See the `phase1-cutover-done` + `ponies-app-deployment` memories for state + deploy steps.
 
-0. **⚡ QUICK WIN — deploy the band fix to Kristina (do first next session).** The band-remove fix (commit `77552ea`) is ready and **non-schema** (safe: her IndexedDB persists, no wipe). Shipping it lets her use working "leave band" + add more photos → then a fresh backup → curator review (her idea, good loop). **Blocker: hosting details are lost** — must reconstruct. What we know: app is live on **GitHub Pages**, she uses it (PWA on iPad); but **this local clone has NO git remote** (`git remote -v` empty), and no repo URL / branch / deploy method is recorded anywhere. Reconstruct next session:
-   - Sign into GitHub → find the repo (likely pony/horse-named) → **Settings → Pages** shows the source (branch + folder, e.g. `gh-pages` or `main`/`docs`) or an Actions workflow.
-   - Add it back to this clone: `git remote add origin <url>` (confirm `master` vs `main`).
-   - Build + deploy: `cd horse_app && flutter build web` → publish `build/web` per the Pages source method.
-   - Her PWA picks it up via service worker on next load (maybe a refresh or two). **Record the repo URL + deploy steps in memory so this is never lost again.**
-1. **Kristina reviews** the changeset in the console (`tools/curator/.venv/Scripts/python console.py`) → clicks **Merge**. This populates the authoring DB's `field_photos` / `bands` / `region_observations` (pedigree-keyed). _Gate — nothing canon until this happens._
-2. **Re-run `build_assets.py`** (dry run) — now `bands[]`/`regions[]`/field `photos[]` fill in and field crops copy to `out/build/photos/`. Spot-check the JSON.
-3. **Phase 1 cutover** (one-time, do soon while on-device data is small):
-   a. App side (§7): add `data_version` handling in `data_service.init()` (schema bump → wipe+reload; content bump → reload canon box only); **extend the notes/herd overlay to bands & regions** (load `bands[]`/`regions[]` into canon boxes, user edits override); flip photo priority to field-first; `horse.dart` reads new fields.
-   b. `build_assets.py --out ../../horse_app/assets` to deploy real assets (copies book + field photos).
-   c. Deploy to GitHub Pages → her device self-overwrites on the `data_version` bump; **remap her 5 notes old→pedigree and re-import once**.
-4. **Phase 2 — recurring re-scrape** (steady state): first **unblock `herds.php`** Current/Past toggle (departed-detection reads the Past view — see `pedigree-site-scraping` memory); then `scrape_pedigrees.py` + `parse_pedigree.py` → wire into the same console; add the 11 missing VA ponies; delete departed (keep/discard gate, §8); resolve `sire_id`/`dam_id` + §5 enrichment from the scrape.
+✅ **Completed this cycle:**
+0. **Hosting reconstructed** (was lost): repo `omegamanndrone/chincoteague-ponies`, Pages source = `gh-pages` branch root, deploy = `flutter build web --base-href /chincoteague-ponies/` then push the contents of `build/web` to `gh-pages` (a git repo lives in `build/web/.git` pointing there). **Band fix `77552ea` shipped + verified** (her data produced a `status:left` marker = proof it works).
+1. **Final backup harvested** — 2026-06-12 export → `ingest_backup` → `crop_photos` (YOLO + © K. Kent, now height-based watermark) → console review → `merge`. Kristina accepted **21 photos** (rejected 4 tiny/blurry), **49 bands**, **61 regions**, 5 notes.
+2. **`build_assets --out ../../horse_app/assets`** — final pedigree-keyed assets; regions deduped to the **current** snapshot (DB keeps dated history). Emits the 4 lineage-flag columns (null) + `id_remap.json`.
+3. **Phase 1 cutover DEPLOYED.** `DataService` is version-gated: `schemaVersion=1` wipe+reload canon + **in-app notes remap** (via non-personal `id_remap.json` — notes never published); `contentVersion` = reload-canon-only (preserves user boxes). Canon∪local overlays for bands + regions; photo priority field-first (+ render `field` source from assets); **provenance accent** (thin teal left rule on local-only data, §10); region surfaced on the detail "Herd" button. `test/migration_test.dart` green. Her device migrated cleanly — photos/bands/herd-N/S/notes all survived.
+
+🔜 **Next — Phase 2: the website scrape** (roster completion + enrichment). **Blocked on the `herds.php` Current/Past toggle** (departed-detection reads the Past view — see `pedigree-site-scraping`). Then build `scrape_pedigrees.py` + `parse_pedigree.py` → wire into the same console → adds the **11 missing VA** ponies + the **~88 MD/Assateague** herd, deletes departed (keep/discard gate §8), resolves `sire_id`/`dam_id` + §5 enrichment (`state`, `coat_pattern`, `markings`, `genotype`, `breeder`, `owner`, `registry`…) + lineage flags (`misty_descendant`/`buyback`/`feral`/`half_chincoteague`). **Ships as a CONTENT update** (non-schema) — preserves all of Kristina's local data, matched by `pedigree_id`.
+
+**Parked (safe to defer):**
+- **Watermark / tiny-crop quality** — `WATERMARK_FRAC` in `crop_photos.py` sizes by height now (consistent ~4.5%); 3–4 genuinely tiny/low-res crops still look big (image quality, not watermark). Re-crop + redeploy anytime (originals archived) as a content update.
+- **VA/MD toggle + region filter UI** (Phase 4) — region data is in canon; only the detail "Herd" button surfaces it so far.
+- **Branch hygiene** — all work on `phase1-pedigree-cutover` (pushed to origin); `master` still at the band fix. Merge whenever; does NOT affect the live site (serves from `gh-pages`).
 
 **~~Open question~~ RESOLVED:** visual canon-vs-user cue → thin left accent rule on local-only items, one reserved accent color app-wide (§10). Non-blocking polish.
 **Open with Kristina:** her collection workflow + the 2 region gaps (Pappy's Pony, Angelique's Tigress Warrior).
@@ -207,9 +207,9 @@ Phase 0 pipeline is built (`ingest → crop → make_changeset → console → m
 
 **Prerequisite (do before/alongside Phase 0): fix the band-remove bug (§11).** It's a non-schema change, safe to deploy during collection, and keeps Kristina's *ongoing* band data clean for future harvests. (This backup predates it, so its band data gets pruned in the console review instead.)
 
-0. **Build the curator console** (`tools/curator/`, Flask) — the reviewable changeset/merge pipeline. First use case: ingest K's backup (capture → YOLO-crop+watermark → click-through accept/reject → merge), including the data-on-departed-horses keep/discard gate, plus offline ID-remap into canon. _(backup file ✓ received)_
-1. Convert system to pedigree_id; rebuild assets with K's data baked in; deploy the cutover build — her device self-overwrites on the `data_version` bump (no manual restore).
-2. Wire the re-scrape source into the same console; add 11 missing VA ponies; delete departed horses; surface enrichment fields on detail screen.
+0. **✅ DONE — Build the curator console** (`tools/curator/`, Flask) — reviewable changeset/merge pipeline. Ingested K's backup (capture → YOLO-crop+watermark → accept/reject → merge), departed-horse keep/discard gate, offline ID-remap into canon.
+1. **✅ DONE (deployed + verified 2026-06-12)** — Converted system to pedigree_id; rebuilt assets with K's data baked in; deployed the cutover build — her device self-overwrote on the `schemaVersion` bump (notes remapped in-app, no manual restore).
+2. **🔜 NEXT (blocked on `herds.php`)** — Wire the re-scrape source into the same console; add 11 missing VA ponies; delete departed horses; surface enrichment fields on detail screen.
 3. Markings search.
 4. MD herd + VA/MD toggle.
 5. Family tree navigation.
