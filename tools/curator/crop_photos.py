@@ -77,8 +77,8 @@ def expand_and_clamp(box, w, h, buffer):
 
 
 def _watermark_font(img_w):
-    size = max(14, img_w // 45)  # scale to image; subtle
-    for name in ("arial.ttf", "DejaVuSans.ttf"):
+    size = max(18, img_w // 28)  # scale to image; visible but not dominant
+    for name in ("arialbd.ttf", "arial.ttf", "DejaVuSans-Bold.ttf", "DejaVuSans.ttf"):
         try:
             return ImageFont.truetype(name, size)
         except OSError:
@@ -87,18 +87,20 @@ def _watermark_font(img_w):
 
 
 def apply_watermark(crop):
-    """Subtle bottom-right '(c) K. Kent', semi-transparent (~40%)."""
+    """Bottom-right '(c) K. Kent' — white at ~78% with a dark outline so it
+    reads on both light and dark coats. Tunable via the alpha/size constants."""
     crop = crop.convert("RGBA")
     overlay = Image.new("RGBA", crop.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     font = _watermark_font(crop.width)
     box = draw.textbbox((0, 0), WATERMARK_TEXT, font=font)
     tw, th = box[2] - box[0], box[3] - box[1]
-    pad = max(6, crop.width // 120)
+    pad = max(8, crop.width // 90)
     x, y = crop.width - tw - pad * 2, crop.height - th - pad * 2
-    # faint shadow for legibility on light coats, then the mark at ~40% opacity
-    draw.text((x + 1, y + 1), WATERMARK_TEXT, font=font, fill=(0, 0, 0, 90))
-    draw.text((x, y), WATERMARK_TEXT, font=font, fill=(255, 255, 255, 102))
+    # dark outline for contrast on light coats, then the mark at ~78% opacity
+    for ox, oy in ((-2, -2), (2, -2), (-2, 2), (2, 2), (0, -2), (0, 2), (-2, 0), (2, 0)):
+        draw.text((x + ox, y + oy), WATERMARK_TEXT, font=font, fill=(0, 0, 0, 150))
+    draw.text((x, y), WATERMARK_TEXT, font=font, fill=(255, 255, 255, 200))
     return Image.alpha_composite(crop, overlay).convert("RGB")
 
 

@@ -17,8 +17,9 @@ SOURCE ─▶ CHANGESET ─▶ review (Accept/Reject) ─▶ MERGE ─▶ BUILD 
 | Ingest + ID remap (§3d) | `ingest_backup.py` | ✅ built |
 | ID mapping helper | `remap.py` | ✅ built |
 | YOLO crop + watermark (§3c) | `crop_photos.py` | ✅ built |
-| Changeset diff (§6) | `make_changeset.py` _todo_ | diffs normalized data vs `horses.db` |
-| Flask review console (§6) | _todo_ | click-through Accept/Reject |
+| Changeset (§6) | `make_changeset.py` | ✅ built |
+| Merge → authoring DB (§6) | `merge.py` | ✅ built |
+| Flask review console (§6) | `console.py` | ✅ built |
 | Build assets (§6) | `build_assets.py` _todo_ | DB → `assets/horses_data.json` + photos |
 
 ## Environment
@@ -57,9 +58,31 @@ Produces `out/` (gitignored — contains personal data):
 
 Produces (all in `out/`, gitignored):
 - `photos_cropped/` — the shipped images: largest horse cropped with a 6% buffer,
-  subtle `© K. Kent` watermark + EXIF Artist/Copyright. No-horse-detected photos are
-  passed through (watermarked) and flagged `needs_review`.
+  `© K. Kent` watermark (bottom-right, white + dark outline; size/opacity tunable in
+  `crop_photos.py`) + EXIF Artist/Copyright. No-horse-detected photos are passed
+  through (watermarked) and flagged `needs_review`.
 - `crop_manifest.json` — per-photo detection conf, crop box, review flags.
+
+## Review console
+
+```bash
+.venv/Scripts/python make_changeset.py     # build out/changeset.json (typed items)
+.venv/Scripts/python console.py            # http://127.0.0.1:5000 (auto-opens)
+```
+
+Click through items Accept/Reject per type; photos show **original ↔ crop side-by-side**.
+Decisions persist to `out/review_state.json` (layered over each item's default action),
+so you can stop and resume. Defaults encode policy: photos `accept` (or `review` if no
+horse), regions `accept`, bands `accept` if current else `reject`, notes `skip`.
+
+**Merge** (dashboard button, or `.venv/Scripts/python merge.py`) writes accepted items
+into the authoring DB — **additive & pedigree-keyed**, never altering the existing
+local-id `horses`/`horse_photos`:
+- `field_photos(filename, pedigree_id, credit, source, detection_conf)` + crops copied to `out/canon_photos/`
+- `region_observations(pedigree_id, region, observed, source)` — ephemeral, dated (band-like)
+- `bands(mare_pedigree_id, stallion_pedigree_id, date_recorded, source)`
+
+Idempotent (INSERT OR REPLACE on natural keys). **Notes are never merged** (local-only).
 
 **Notes are local-only and never canon** (§0.1). They appear in `normalized.json`
 only so the cutover remap+re-import (§4) can find them — do not merge them into canon.
