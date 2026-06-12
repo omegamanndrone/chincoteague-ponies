@@ -20,7 +20,8 @@ SOURCE ─▶ CHANGESET ─▶ review (Accept/Reject) ─▶ MERGE ─▶ BUILD 
 | Changeset (§6) | `make_changeset.py` | ✅ built |
 | Merge → authoring DB (§6) | `merge.py` | ✅ built |
 | Flask review console (§6) | `console.py` | ✅ built |
-| Build assets (§6) | `build_assets.py` _todo_ | DB → `assets/horses_data.json` + photos |
+| Build assets (§6) | `build_assets.py` | ✅ scaffolded (dry-run safe) |
+| Scrape (§6, Phase 2) | `scrape_pedigrees.py` / `parse_pedigree.py` _todo_ | blocked: herds.php Past-view toggle |
 
 ## Environment
 
@@ -83,6 +84,20 @@ local-id `horses`/`horse_photos`:
 - `bands(mare_pedigree_id, stallion_pedigree_id, date_recorded, source)`
 
 Idempotent (INSERT OR REPLACE on natural keys). **Notes are never merged** (local-only).
+
+## Build assets (DB → app JSON)
+
+```bash
+python build_assets.py                       # dry run -> out/build/ (safe; does not touch the app)
+python build_assets.py --out ../../horse_app/assets   # real deploy target
+```
+
+Emits `horses_data.json` in the decided shape — separate top-level pedigree-keyed
+sections `horses` / `photos` / `bands` / `regions` (§6) — re-keying horses local→
+pedigree by lookup (never in place). Canon sections fill from the merged tables;
+absent tables → empty sections, so it runs safely **before** a merge (proves the
+re-keying). `sire_id`/`dam_id` and §5 enrichment stay null until the scrape (Phase 2)
+provides them. See `IMPLEMENTATION_PLAN.md` §6 breadcrumbs for the path forward.
 
 **Notes are local-only and never canon** (§0.1). They appear in `normalized.json`
 only so the cutover remap+re-import (§4) can find them — do not merge them into canon.

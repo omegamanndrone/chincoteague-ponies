@@ -133,7 +133,7 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 1. `scrape_pedigrees.py` — fetch VA+MD Current rosters; for each id fetch `pedigree.php`, **cache raw HTML**, throttle ~1.5 s.
 2. `parse_pedigree.py` — grammar parser → structured fields + marking tokens + sire/dam ids.
 3. `make_changeset.py` — diff scrape/ingest against authoring `horses.db` → changeset for the console.
-4. `build_assets.py` — after merge, write/refresh `horses.db` → regenerate `assets/horses_data.json` (keyed by pedigree_id) + copy photo assets.
+4. `build_assets.py` — **✓ SCAFFOLDED.** Reads `horses.db` → `horses_data.json` in the decided shape; re-keys horses local→pedigree (by lookup), assembles `horses`/`photos`/`bands`/`regions`. **Safe by default** — writes to `tools/curator/out/build/` (dry run); `--out ../../horse_app/assets` to deploy. Handles canon tables being absent (empty sections pre-merge). Dry-run verified on real data: 143 horses, 0 id collisions (local-42 → pedigree-3), 280 book photos remapped, 0 orphans. **Remaining (Phase 1/2):** `sire_id`/`dam_id` stay null until the scrape resolves pedigree links; §5 enrichment columns emit null until added + scraped; book photo files copied only on real deploy; the app-side loader must learn to read `bands[]`/`regions[]` (see §7).
    - **MERGE semantics (critical for updates):** canon photos/bands/herds (from Kristina) are keyed by pedigree_id and must be **preserved/merged** on every re-scrape — scraping refreshes public fields only, never clobbers our unique content.
    - **Built asset shape (decided):** `horses_data.json` keeps **separate, top-level, pedigree-keyed sections** rather than embedding the dated data inside each horse — chosen because the recurring re-scrape churns `horses[]` (add newborns, drop departed), and separate sections make add = append, delete = filter + prune dangling refs, without disturbing our unique canon:
      - `horses[]` — `id` = pedigree_id; `sire_id`/`dam_id` (was name strings); enriched fields from §5 (`state`, `coat_pattern`, `markings`, `genotype`, `breeder`, `owner`, `auction_number`, `registry`, `registry_number`, `dsc_photo_url`). **`region` is NOT here** (it's dated → its own section).
@@ -142,6 +142,21 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
      - `regions[]` — `{id, region, observed}` (dated/ephemeral, from `region_observations`).
    - **App-side overlay:** `bands[]`/`regions[]` load into **canon** boxes; the user's local edits overlay them at read-time, exactly as `getAllHorses()` already overlays user notes/herd onto canon ([data_service.dart:73-79](horse_app/lib/services/data_service.dart#L73-L79)). Extending that existing pattern to bands/regions is the "canon vs user box split."
 5. Validation: every current-herd pony present; spot-check 5 end-to-end; confirm Kristina's remapped data round-trips.
+
+### 🍞 Breadcrumbs — concrete next steps from here (2026-06-11)
+
+Phase 0 pipeline is built (`ingest → crop → make_changeset → console → merge → build_assets`). Ordered path forward:
+
+1. **Kristina reviews** the changeset in the console (`tools/curator/.venv/Scripts/python console.py`) → clicks **Merge**. This populates the authoring DB's `field_photos` / `bands` / `region_observations` (pedigree-keyed). _Gate — nothing canon until this happens._
+2. **Re-run `build_assets.py`** (dry run) — now `bands[]`/`regions[]`/field `photos[]` fill in and field crops copy to `out/build/photos/`. Spot-check the JSON.
+3. **Phase 1 cutover** (one-time, do soon while on-device data is small):
+   a. App side (§7): add `data_version` handling in `data_service.init()` (schema bump → wipe+reload; content bump → reload canon box only); **extend the notes/herd overlay to bands & regions** (load `bands[]`/`regions[]` into canon boxes, user edits override); flip photo priority to field-first; `horse.dart` reads new fields.
+   b. `build_assets.py --out ../../horse_app/assets` to deploy real assets (copies book + field photos).
+   c. Deploy to GitHub Pages → her device self-overwrites on the `data_version` bump; **remap her 5 notes old→pedigree and re-import once**.
+4. **Phase 2 — recurring re-scrape** (steady state): first **unblock `herds.php`** Current/Past toggle (departed-detection reads the Past view — see `pedigree-site-scraping` memory); then `scrape_pedigrees.py` + `parse_pedigree.py` → wire into the same console; add the 11 missing VA ponies; delete departed (keep/discard gate, §8); resolve `sire_id`/`dam_id` + §5 enrichment from the scrape.
+
+**Open question to settle with you:** visual canon-vs-user cue, or keep it seamless (§10).
+**Open with Kristina:** her collection workflow + the 2 region gaps (Pappy's Pony, Angelique's Tigress Warrior).
 
 ## 7. App changes (Flutter)
 
