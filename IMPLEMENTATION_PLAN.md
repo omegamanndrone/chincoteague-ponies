@@ -174,7 +174,9 @@ Resolved:
 - **Notes** — **personal/local, never canon** (§0.1); the 5 are valuable (deaths/vet/injury) → **preserve through the cutover** (remap + one re-import).
 - **Departed-horse data** (verified): only 2 of the 6 have any K data, both **notes documenting their deaths** (Winter Moon, Gidget's Beach Baby) — no photos/bands lost on deletion. Keep those 2 death-notes in our authoring changelog.
 - **`region` dating** — add `region_observed` (recommended), backfill to 2026-06-10.
-- **Band-remove fix approach** — option (b), dated departure marker (§11).
+- **Band-remove fix approach** — option (b), dated departure marker (§11). **✓ DONE.**
+- **Band/region = preserve all dated history** — keep every dated sighting/observation; the app surfaces *current* + truncates the card to the last 2 years. Curator **band default = Accept** (not reject-stale); "older sighting" entries are kept, not pruned.
+- **No in-app delete for incorrect band entries** — corrections happen at our Curator review gate (Reject on ingest), not on-device. Keeps the app to add/depart only.
 
 Pending (need it in-hand to act, not decisions):
 - Nothing blocking. Phase 0 is ready to start (backup ✓ received). First implementation step next session: scaffold `tools/curator/` + run the 15 photos through crop+watermark.
@@ -182,5 +184,5 @@ Pending (need it in-hand to act, not decisions):
 ## 11. Known bugs / fixes
 
 - **Band "remove" doesn't work** (reported by Kristina — a horse that leaves a band can't be removed from the display). **Root cause:** `_editBand` ([horse_detail_screen.dart:197-203](horse_app/lib/screens/horse_detail_screen.dart#L197-L203)) only **adds** still-selected horses via `addToBand`; it never deletes deselected ones. `removeBandEntry()` ([data_service.dart:267](horse_app/lib/services/data_service.dart#L267)) exists but has **no callers**. Because `getCurrentBandMembers()` keeps the latest-dated entry per horse, the stale membership persists.
-  - **Fix options:** (a) quick — in `_editBand`, delete entries for `removedIds = existingIds − selectedIds`; or (b) better, consistent with the dated/region snapshot model — write a **departure marker** (e.g. a `left`-dated entry) so history is preserved and `getCurrentBandMembers()` excludes departed horses.
-  - **Priority: PREREQUISITE** (see §9) — fix before/alongside Phase 0. Non-schema change, safe to deploy during collection; stops stale memberships from polluting future harvests. Recommend option (b).
+  - **✓ FIXED** (option b — dated departure marker). `addToBand` now records a `status` (`present`|`left`); new `markBandDeparture` writes a dated `left` marker; `getCurrentBandMembers` takes the latest entry per horse and excludes those whose latest is `left`. `_editBand` writes departure markers for deselected horses (never the stallion). `ingest_backup.py` is forward-compat (treats `left` as departure, not canon). Current backup unchanged (44 bands / 41 current). `flutter analyze` clean.
+  - **Workflow (decided):** band "remove" = **departure, not delete** — keep ALL dated sightings; the app shows current + a History section truncated to the **last 2 years**. **No in-app hard-delete for incorrect entries** (dropped to avoid over-complication): bad entries are pruned by us in the **Curator console (Reject)** on ingest. The fits the sellable model: removing a *canon-shipped* band on-device must be a **local departure-override that survives content updates** (a hard delete would be restored when the canon box reloads).

@@ -74,7 +74,9 @@ def build(out_dir: Path) -> dict:
             "mare_pedigree_id": b["mare_pedigree_id"], "mare_name": b["mare_name"],
             "stallion_pedigree_id": b["stallion_pedigree_id"], "stallion_name": b["stallion_name"],
             "date_recorded": b["date_recorded"], "is_current": b["is_current"],
-            "default_action": "accept" if b["is_current"] else "reject",
+            # Keep ALL dated sightings as history (the app shows current + truncates
+            # the card to 2 years). Reject is reserved for genuinely incorrect entries.
+            "default_action": "accept",
         })
 
     # --- notes (LOCAL ONLY — never canon; surfaced for the departed-gate) ---

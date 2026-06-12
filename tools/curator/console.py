@@ -199,8 +199,9 @@ def review(t):
             if t == "region":
                 cells = f'<td class=name>{it["name"]}</td><td>{it["region"]}</td><td>{it["observed"]}</td>'
             else:
-                stale = "" if it["is_current"] else "stale"
-                tag = '<span class="pill acc">current</span>' if it["is_current"] else '<span class="pill rej">stale</span>'
+                stale = "" if it["is_current"] else "older"
+                tag = ('<span class="pill acc">current</span>' if it["is_current"]
+                       else '<span class="pill skip">older sighting</span>')
                 cells = (f'<td class=name>{it["mare_name"]}</td><td>→ {it["stallion_name"]}</td>'
                          f'<td>{it["date_recorded"]} {tag}</td>')
                 cells = f'<tr class="{stale}">' + cells
