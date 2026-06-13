@@ -98,7 +98,11 @@ Hosting is **GitHub Pages** (free): a push updates the live site; her PWA picks 
 ## 5. Schema changes (`horses`)
 
 Existing columns stay. `id` is repurposed to hold pedigree_id. New columns (all nullable, additive):
-`state` (VA/MD), `region`, `coat_pattern`, `markings`, `genotype`, `birth_location`, `breeder`, `owner`, `auction_number`, `registry`, `registry_number`, `sire_id`, `dam_id`, `dsc_photo_url` (copyrighted gallery link-out).
+`state` (VA/MD), `region`, `coat_pattern`, `markings`, `genotype`, `birth_location`, `breeder`, `owner`, `auction_number`, `registry`, `registry_number`, `sire_id`, `dam_id`, `dsc_photo_url` (copyrighted gallery link-out), **`background`** (canon narrative — see below).
+
+**`background` supersedes `book_info` (decided 2026-06-12).** The old `book_info` blurb is a *subset of the website description prose* (verified: Daisey's `book_info` is byte-identical to the trailing sentences of her `pedigree.php` description) and exists for only 23/143 horses. So: **drop the "From the Book" display**, and have `parse_pedigree.py` capture the **residual narrative** (the prose left after the structured fields are extracted — donation stories, "Alternate sire/dam", "descends from Misty 7 times", nicknames like "Queen Neptune") into a canon **`background`** field. Shareable (every buyer gets it), refreshes with each scrape, absorbs all of `book_info`. `book_info` column joins the build-cruft drop list. Genuinely unique-to-Kristina observations stay in her local Notes.
+
+**`coat_pattern` is a FILTER field, not a display row (decided 2026-06-12).** Since `color` comes from the roster already as common usage ("bay pinto"), a separate "Pattern: pinto" row is redundant — the detail card folds pattern into the color line and does not show a standalone pattern row. `coat_pattern` (normalized `tobiano→pinto`) earns its keep as a **filter/search** dimension, not card text.
 
 **Pedigree-chart flag codes (NOT in the prose paragraph — easy to miss).** Each name in the `pedigree.php` 4-gen chart carries optional flags; legend: **M** Misty descendant · **B** buyback · **F** feral · **★** full sibling · **H** half Chincoteague. Capture **M/B/F/H** as four additive boolean columns (`misty_descendant`, `buyback`, `feral`, `half_chincoteague`) in the Phase 2 scrape and show them as small badges on the detail card. The explicit **B** flag supersedes inferring buyback from `buyback_donor`. **★ (full sibling) is NOT scraped — derive it:** in the family resolver, both `sire_id`+`dam_id` match = full sibling (★), one matches = half. The current book-derived data has none of these flags.
 
@@ -191,7 +195,16 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 - `horse.dart` — new fields in model/`fromMap`/`toMap`/`copyWith`.
 - `data_service.dart` — load new fields; `state` (VA/MD) filter; marking search; family resolver by id; **user-photo-primary** ordering (flip `getFirstPhotoForHorse` to prefer `source != 'book'`). **Add `data_version` handling on `init()`:** schema bump → clear all boxes + reload bundled canon (one-time cutover); content bump → reload canon/book box only, preserve user boxes (replaces today's empty-box-only load gate).
 - `horse_list_screen.dart` — VA/MD toggle (top level); within VA, a northern/southern `region` filter (MD shows a flat list, no region); marking filter chips; graceful empty-photo tiles. (No departed/past filter — departed horses aren't in the dataset.)
-- `horse_detail_screen.dart` — show markings/pattern/genotype/registry; single tappable **Family** row → tree; keep video/pedigree links; photo gallery with K's photos first.
+- `horse_detail_screen.dart` — **redesigned as ONE continuous "ID card" (hybrid: glanceable, with collapsible low-value tiers), decided 2026-06-12.** Top→bottom:
+  - **At-a-glance identity (always open):** sex · color (roster's "bay pinto", pattern folded in — no separate pattern row) · age/birth year · current `region`; the M/B/F/H flags + `registry` rendered as **small badges**, not rows.
+  - **DESCRIPTION (always open):** `markings` (the field-ID core), eye color, brand. This is the most prominent descriptive block.
+  - **BANDS (always open, prominent):** current band + history (last 2 yrs) — Kristina's editable observational data, provenance-accented.
+  - **▸ Pedigree / Family (collapsed):** sire/dam tappable → family tree.
+  - **▸ Records & registry (collapsed):** breeder, owner, full birth date+location, auction $+#, buyback donor, registry+#, **genotype** (technical, lives here).
+  - **▸ Background (collapsed):** the canon `background` narrative (replaces "From the Book", which is dropped).
+  - **Your Notes (always open, editable)** + a **compact link row** (video · pedigree · DSC link-out).
+  - **Region *history* is NOT displayed** — kept in the DB backend only (single-entry for most horses; the *current* region shows in the identity line). Rare cross-herd (MD→VA) moves the region model can't express go in Notes as free text.
+  - **Editability is unchanged from today:** bands, region/herd, notes, photos stay user-editable (local overlay); all scraped/canon fields are **read-only on-device** (corrections happen at the curator gate, §10), so a content update never clobbers the user's edits.
 - New family tree screen (current-herd nodes clickable; others plain names).
 
 ## 8. Photos, family tree & licensing
