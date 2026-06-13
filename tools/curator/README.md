@@ -20,8 +20,11 @@ SOURCE ─▶ CHANGESET ─▶ review (Accept/Reject) ─▶ MERGE ─▶ BUILD 
 | Changeset (§6) | `make_changeset.py` | ✅ built |
 | Merge → authoring DB (§6) | `merge.py` | ✅ built |
 | Flask review console (§6) | `console.py` | ✅ built |
-| Build assets (§6) | `build_assets.py` | ✅ scaffolded (dry-run safe) |
-| Scrape (§6, Phase 2) | `scrape_pedigrees.py` / `parse_pedigree.py` _todo_ | blocked: herds.php Past-view toggle |
+| Build assets (§6) | `build_assets.py` | ✅ scaffolded (dry-run safe); needs `background` + drop `book_info` + sire/dam resolve |
+| Scrape rosters + pages (§6, Phase 2) | `scrape_pedigrees.py` | ✅ built — caches 4 rosters + 236 Current pages |
+| Parse pedigree pages (§5/§6) | `parse_pedigree.py` | ✅ built — all §5 fields + `background`; `--validate`, `--id N` |
+| Reconcile vs app (validation) | `reconcile.py` | ✅ built — app-vs-scrape diff, nickname-alias aware |
+| Scrape → changeset (Phase 2) | `make_changeset.py` (scrape source) _todo_ | next: diff parsed.json vs horses.db into the console |
 
 ## Environment
 

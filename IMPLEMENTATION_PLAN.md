@@ -170,9 +170,18 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
    - **App-side overlay:** `bands[]`/`regions[]` load into **canon** boxes; the user's local edits overlay them at read-time, exactly as `getAllHorses()` already overlays user notes/herd onto canon ([data_service.dart:73-79](horse_app/lib/services/data_service.dart#L73-L79)). Extending that existing pattern to bands/regions is the "canon vs user box split."
 5. Validation: every current-herd pony present; spot-check 5 end-to-end; confirm Kristina's remapped data round-trips.
 
-### 🍞 Breadcrumbs — status & next steps (updated 2026-06-12)
+### 🍞 Breadcrumbs — status & next steps (updated 2026-06-12, end of scrape-tooling session)
 
-**Phases 0 + 1 are DONE and DEPLOYED** — app is live on `pedigree_id`, verified on Kristina's device 2026-06-12. See the `phase1-cutover-done` + `ponies-app-deployment` memories for state + deploy steps.
+**Phases 0 + 1 are DONE and DEPLOYED** — app is live on `pedigree_id`, verified on Kristina's device 2026-06-12. **Phase 2 is UNBLOCKED and ~half built** — scraper, parser, and reconcile tooling are done & validated; the build/merge/app side is what's left. See the `phase2-scrape-progress`, `detail-card-design`, `phase1-cutover-done`, `pedigree-site-scraping`, and `ponies-app-deployment` memories.
+
+**✅ Phase 2 progress this session (all on branch `phase1-pedigree-cutover`, committed, NOT pushed/deployed):**
+- **Unblocked** — the `herds.php` "blocker" was a wrong URL: pages live under `/pedigree/`; POSTing to the bare root 404s + drops the body. All 4 rosters toggle fine (VA 148/411, MD 88/328).
+- **`scrape_pedigrees.py`** — cached the 4 rosters + all 236 Current pedigree pages (raw HTML in `out/scrape/raw/`, gitignored; `out/scrape/rosters.json`). Resumable.
+- **`parse_pedigree.py`** — FEATURE-COMPLETE parser → `out/scrape/parsed.json`. All §5 fields incl. `registry`/`registry_number`, `sire_id`/`dam_id`(+names), M/B/F/H flags, heterochromia-aware `eye_color`, and the canon **`background`** narrative (replaces book_info; 69/236). `--validate`, `--id N`.
+- **`reconcile.py`** — app-vs-scrape diff. Validation: sex 137/137, birth_year 137/137, sire 133/136, dam 124/137; **zero genuine conflicts** (apparent ones are nickname aliases, auto-resolved).
+- **Roster diff** (matches plan): **11 new VA, 88 new MD, 6 departed** (all in VA-Past; keep/discard gate CLEAN — 0 canon data attached, safe to delete).
+- **Detail-card redesign + data decisions** locked (see `detail-card-design`): single continuous "ID card", collapsible tiers; `coat_pattern`=filter-not-row; drop book_info→`background`; region history hidden (DB only); editability preserved.
+- **Phase 7 (YouTube video ingest)** specced as a future curator source (§8.1).
 
 ✅ **Completed this cycle:**
 0. **Hosting reconstructed** (was lost): repo `omegamanndrone/chincoteague-ponies`, Pages source = `gh-pages` branch root, deploy = `flutter build web --base-href /chincoteague-ponies/` then push the contents of `build/web` to `gh-pages` (a git repo lives in `build/web/.git` pointing there). **Band fix `77552ea` shipped + verified** (her data produced a `status:left` marker = proof it works).
@@ -180,7 +189,12 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 2. **`build_assets --out ../../horse_app/assets`** — final pedigree-keyed assets; regions deduped to the **current** snapshot (DB keeps dated history). Emits the 4 lineage-flag columns (null) + `id_remap.json`.
 3. **Phase 1 cutover DEPLOYED.** `DataService` is version-gated: `schemaVersion=1` wipe+reload canon + **in-app notes remap** (via non-personal `id_remap.json` — notes never published); `contentVersion` = reload-canon-only (preserves user boxes). Canon∪local overlays for bands + regions; photo priority field-first (+ render `field` source from assets); **provenance accent** (thin teal left rule on local-only data, §10); region surfaced on the detail "Herd" button. `test/migration_test.dart` green. Her device migrated cleanly — photos/bands/herd-N/S/notes all survived.
 
-🔜 **Next — Phase 2: the website scrape** (roster completion + enrichment). **Blocked on the `herds.php` Current/Past toggle** (departed-detection reads the Past view — see `pedigree-site-scraping`). Then build `scrape_pedigrees.py` + `parse_pedigree.py` → wire into the same console → adds the **11 missing VA** ponies + the **~88 MD/Assateague** herd, deletes departed (keep/discard gate §8), resolves `sire_id`/`dam_id` + §5 enrichment (`state`, `coat_pattern`, `markings`, `genotype`, `breeder`, `owner`, `registry`…) + lineage flags (`misty_descendant`/`buyback`/`feral`/`half_chincoteague`). **Ships as a CONTENT update** (non-schema) — preserves all of Kristina's local data, matched by `pedigree_id`.
+🔜 **Next — finish Phase 2 (the scrape MERGE + app side).** The source/parse half is done (above); remaining, in order:
+1. **`make_changeset.py` for the scrape** — diff `parsed.json` + `rosters.json` against authoring `horses.db` → typed changeset (`new_horse` ×11 VA + ×88 MD, `departed` ×6, `field_change` for enrichment). Reuse the existing Flask console (`console.py`) to review. **Two design forks to decide here:** (a) the **merge "don't-clobber" rule** — a scraped null must never blank a populated canon field (the book is sometimes richer, e.g. 4 buyback_donors the website omits); (b) **auto-accept threshold** — auto-accept `same`/`spelling`/`alias` diffs, surface only genuine `field_change`s + new/departed for Kristina.
+2. **Normalization-map module** — factor out `tobiano→pinto` + roster-color-as-canonical `color` so changeset/merge share it. (Parser already normalizes coat_pattern.)
+3. **`merge.py`** — extend to write scraped fields + the new horses/departures into `horses.db` (additive, pedigree-keyed; don't-clobber).
+4. **`build_assets.py`** — emit the §5 columns incl. `background`; **drop `book_info`**; resolve `sire_id`/`dam_id`. Then `--out ../../horse_app/assets`.
+5. **App side** — `horse.dart` gains `background`; `horse_detail_screen.dart` rebuilt to the new ID card (`detail-card-design`); `state` filter + markings search land in their own phases (3–4). Ships as a **CONTENT update** (non-schema) — preserves all of Kristina's local data, matched by `pedigree_id`.
 
 **Parked (safe to defer):**
 - **Watermark / tiny-crop quality** — `WATERMARK_FRAC` in `crop_photos.py` sizes by height now (consistent ~4.5%); 3–4 genuinely tiny/low-res crops still look big (image quality, not watermark). Re-crop + redeploy anytime (originals archived) as a content update.
