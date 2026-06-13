@@ -94,6 +94,35 @@ def _sire_dam(html):
     return sire, sire_name, dam, dam_name
 
 
+_STOP = r"(?:Registry|Born |Brand:|Auction|" + "|".join(COLORS) + r"|$)"
+
+
+def _registry(fam):
+    """'Registry Number: NPS number: N9BFT-KP' -> ('NPS', 'N9BFT-KP'). Org formats:
+    NPS (park), CVFC (fire company), ICPAR (the registry); plus bare codes/typos."""
+    m = re.search(r"Registry Number:\s*([A-Za-z0-9#:,\.\- ]+?)\s*" + _STOP, fam)
+    if not m:
+        return None, None
+    raw = m.group(1).strip().rstrip(",").strip()
+    if re.search(r"NPS", raw, re.I):
+        org = "NPS"
+    elif re.search(r"ICPAR", raw, re.I):
+        org = "ICPAR"
+    elif re.search(r"C.?F.?C", raw, re.I):  # CVFC / CFVC typo
+        org = "CVFC"
+    else:
+        org = None
+    num = None
+    for pat in (r"#\s*([A-Za-z0-9\-]+)",            # ICPAR #BB5
+                r"numb\w*:?\s*([A-Za-z0-9\-]+)",    # 'number:'/'Number:'/'numbrer:' code
+                r"([A-Za-z0-9][A-Za-z0-9\-]{3,})\s*$"):  # bare trailing code
+        mm = re.search(pat, raw, re.I)
+        if mm:
+            num = mm.group(1)
+            break
+    return org, num
+
+
 def _desc_fields(fam):
     """'Bay tobiano female with blaze, four stockings.' -> color/pattern/sex/markings."""
     out = {"color": None, "coat_pattern": None, "sex": None, "markings": []}
@@ -142,12 +171,13 @@ def parse_pedigree(html, hid):
     if m:
         rec["birth_year"] = m.group(1)
         rec["birth_location"] = m.group(2).strip()
-    rec["breeder"] = (re.search(r"Breeder:\s*([^<]*?)\s*(?:Owner:|Born |Brand:|$)", fam) or [None, None])[1]
-    rec["owner"] = (re.search(r"Owner:\s*([^<]*?)\s*(?:Born |Brand:|Bay|Chestnut|Black|$)", fam) or [None, None])[1]
+    rec["breeder"] = (re.search(r"Breeder:\s*(.*?)\s*(?:Owner:|" + _STOP[3:], fam) or [None, None])[1]
+    rec["owner"] = (re.search(r"Owner:\s*(.*?)\s*" + _STOP, fam) or [None, None])[1]
     if rec["breeder"]:
         rec["breeder"] = rec["breeder"].strip() or None
     if rec["owner"]:
         rec["owner"] = rec["owner"].strip() or None
+    rec["registry"], rec["registry_number"] = _registry(fam)
 
     rec.update(_desc_fields(fam))
 
