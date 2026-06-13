@@ -213,8 +213,22 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 - **Kristina's photos:** YOLO-cropped, **watermarked + attributed to K. Kent** (§3c.1), `source='field'` with `credit='K. Kent'`, **primary** image — this is the "slowly replace book photos" path and prepares the photos as sellable, credited assets.
 - **Departed horses:** **deleted from the canonical current dataset** (consistent with the update paths — the new build ships current VA/MD herds only). The 6 departed horses now in the app go away too. ⚠️ **Gate:** before deleting, the K-ingest changeset must surface any of her data (photos/bands/notes) attached to those 6 for keep-or-discard review — we decide once we see her backup. **Future option** (not now): if the app ever carries departed horses, they live in an **isolated "Departed" section**, integrated with the rest of the system *only* through the family tree — mirroring the website's separate Past-herd view.
 - **Family tree:** **do not import dead/removed horses.** Ancestors not in current VA/MD herds (including the departed) show as plain non-clickable names; the tree dead-ends there.
-- **DSC Photography galleries** & **identifyingchincoteagueponies.com videos:** copyrighted → **link out only, never download/rehost.**
+- **DSC Photography galleries** & **identifyingchincoteagueponies.com videos:** copyrighted → **link out only, never download/rehost.** (Card label: **"Photos at DSC"**, not a bare "DSC".)
 - **Pedigree text:** factual/public, maintainers invite contributions → scrape politely.
+
+### 8.1. Kristina's YouTube videos — a future "video ingest" curator source (decided as a later phase, 2026-06-12)
+Kristina has a YouTube channel with many videos of these ponies. Goal: replace the per-horse **"▶ video"** link (today → identifyingchincoteagueponies.com) with **her own** video when one exists, falling back to the existing link otherwise — the same primary-with-fallback model as her field photos.
+
+**Architecture (the non-negotiable part): index at BUILD time, never from the app.** The app must never call the YouTube API at runtime (would ship an API key in the client, hit quotas, break offline/PWA, and couple the sold app to her account). Instead it's a **third recurring curator source** that reuses the existing changeset → console → merge machinery (alongside photo-ingest and the website scrape):
+
+```
+K's YouTube channel ─(YouTube Data API, our machine)─▶ changeset (proposed horse↔video matches) ─▶ K reviews/confirms ─▶ bake youtube_url(s) into canon ─▶ ship
+```
+
+- **Matching — don't rely on hashtags alone.** The API gives each video's **title + description + tags**; run all three through the **name/nickname resolver we already built** for the scrape (normalized names + roster nicknames). Most videos already name the horse in the title → likely matches with zero hashtagging. Hashtags become a booster for ambiguous cases, not a requirement on K.
+- **Disambiguation = reviewable default, not a hard rule.** Auto-rank candidate videos per horse (the user's heuristic — *fewest other horse-matches = most horse-specific* — is a fine default order), but K **confirms/overrides** the primary in the console (same Accept/Reject flow as photos), killing false-match risk. Store a **short list** per horse (primary on the card + a "more videos" affordance), so a multi-horse compilation correctly appears as a secondary on each featured horse's card.
+- **Schema:** a dated/credited `videos[]` canon section keyed by pedigree_id (`{horse_id, youtube_url, is_primary}`), parallel to `photos[]`/`bands[]`/`regions[]`. The card's video link prefers a primary `videos[]` entry, else `qr_video_url`.
+- **Prereqs:** a YouTube Data API key (build-time only) + a new `ingest_youtube.py` curator source. Link out to YouTube (don't embed/rehost) to stay consistent with the link-out policy; her own videos are her copyright, so linking is clean.
 
 ## 9. Phasing
 
@@ -222,11 +236,12 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 
 0. **✅ DONE — Build the curator console** (`tools/curator/`, Flask) — reviewable changeset/merge pipeline. Ingested K's backup (capture → YOLO-crop+watermark → accept/reject → merge), departed-horse keep/discard gate, offline ID-remap into canon.
 1. **✅ DONE (deployed + verified 2026-06-12)** — Converted system to pedigree_id; rebuilt assets with K's data baked in; deployed the cutover build — her device self-overwrote on the `schemaVersion` bump (notes remapped in-app, no manual restore).
-2. **🔜 NEXT (blocked on `herds.php`)** — Wire the re-scrape source into the same console; add 11 missing VA ponies; delete departed horses; surface enrichment fields on detail screen.
+2. **🔜 NEXT (UNBLOCKED 2026-06-12)** — Wire the re-scrape source into the same console; add 11 missing VA ponies + 88 MD; delete the 6 departed horses (gate clean); surface enrichment + the redesigned ID card (§7). _Scraper + parser + reconcile already built & validated; remaining = `background` capture, normalization-map module, `make_changeset.py`, merge → build → deploy as a content update._
 3. Markings search.
 4. MD herd + VA/MD toggle.
 5. Family tree navigation.
-6. Polish (DSC link-out, device-photo replacement UX, history-blurb groundwork for sale).
+6. Polish (DSC "Photos at DSC" link-out, device-photo replacement UX, history-blurb groundwork for sale).
+7. **Video ingest (§8.1)** — index Kristina's YouTube channel at build time → reviewable horse↔video matches → bake `videos[]` into canon; per-horse video link prefers her video over the identifyingchincoteagueponies.com fallback. New curator source; reuses the changeset/console/merge machinery.
 
 ## 10. Resolved decisions & pending input
 
