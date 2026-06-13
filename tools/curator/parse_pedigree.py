@@ -123,6 +123,47 @@ def _registry(fam):
     return org, num
 
 
+# a description sentence is "structured" (a field we already extract) if it leads
+# with a known label, is the color/sex/markings sentence, the eye sentence, or a
+# bare genotype. Everything else is free narrative -> the canon `background` blurb.
+_STRUCT_PREFIX = re.compile(
+    r"^(?:Breeder|Owner|Auction price|Auction number|Auction Video|Buyback donor|"
+    r"Brand|Registry Number|Registry|Born|First seen)\b|^Buyback donors?\b", re.I)
+_COLOR_RE = re.compile(r"\b(?:" + "|".join(COLORS) + r")\b", re.I)
+_SEX_RE = re.compile(r"\b(?:" + "|".join(SEXES) + r")\b", re.I)
+_GENO_ONLY = re.compile(r"(?:[A-Za-z]{1,3}/[A-Za-z]{1,3}\s*,?\s*)+$")
+
+
+def _is_structured(s):
+    s = s.strip().rstrip(".").strip()
+    if not s or s.startswith("["):
+        return True
+    if _STRUCT_PREFIX.match(s):
+        return True
+    if _COLOR_RE.search(s) and _SEX_RE.search(s):   # color/sex/markings sentence
+        return True
+    if re.search(r"\beyes$", s, re.I):              # 'Brown eyes'
+        return True
+    if _GENO_ONLY.fullmatch(s):                     # 'TO/TO, A/a, E/e'
+        return True
+    return False
+
+
+def _background(fam_html):
+    """The residual narrative prose (donation stories, Alternate sire/dam, Misty
+    descent, nicknames-of-note) after the structured fields are removed. Supersedes
+    the old book_info (which was a subset of this same prose)."""
+    # anchor text = the media link labels (DSC/video/etc.); not narrative -> drop
+    desc = re.sub(r"<a\b[^>]*>.*?</a>", " ", fam_html, flags=re.S | re.I)
+    desc = re.sub(r"<[^>]+>", " ", desc).replace("&nbsp;", " ").replace("&amp;", "&")
+    desc = re.sub(r"\s+", " ", desc).strip()
+    desc = re.sub(r"^\s*\[[^\]]*\]\s*", "", desc)   # leading nickname bracket
+    desc = re.sub(r"\s+\.", ".", desc)              # '$6,700 .' -> '$6,700.'
+    narrative = [s.strip() for s in re.split(r"(?<=\.)\s+", desc) if not _is_structured(s)]
+    bg = " ".join(narrative).strip()
+    return bg or None
+
+
 def _desc_fields(fam):
     """'Bay tobiano female with blaze, four stockings.' -> color/pattern/sex/markings."""
     out = {"color": None, "coat_pattern": None, "sex": None, "markings": []}
@@ -187,7 +228,7 @@ def parse_pedigree(html, hid):
     # detailed birth date: 'June 25, 2011' or 'May 2004'
     rec["birth_date"] = (re.search(r"Born\s+([A-Z][a-z]+(?:\s+\d{1,2})?,?\s+\d{4})(?!\s+in\b)", fam)
                          or [None, None])[1]
-    rec["buyback_donor"] = (re.search(r"Buyback donor:\s*([^.]+?)\.", fam) or [None, None])[1]
+    rec["buyback_donor"] = (re.search(r"Buyback donors?:\s*([^.]+?)\.", fam) or [None, None])[1]
     rec["brand"] = (re.search(r"Brand:\s*([^.]+?)\.", fam) or [None, None])[1]
     # genotype tokens e.g. E/e, TO/n, A/A, CR/n
     geno = re.findall(r"\b([A-Za-z]{1,3}/[A-Za-z]{1,3})\b", fam)
@@ -198,6 +239,8 @@ def parse_pedigree(html, hid):
                            or [None, None])[1]
     rec["dsc_photo_url"] = (re.search(r'href="([^"]+)"[^>]*>\s*Photos at DSC Photography', fam_html)
                             or [None, None])[1]
+
+    rec["background"] = _background(fam_html)  # canon narrative; supersedes book_info
 
     rec["sire_id"], rec["sire_name"], rec["dam_id"], rec["dam_name"] = _sire_dam(html)
     # tidy strings
