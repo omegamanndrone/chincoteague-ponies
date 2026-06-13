@@ -202,7 +202,7 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 - **Branch hygiene** — all work on `phase1-pedigree-cutover` (pushed to origin); `master` still at the band fix. Merge whenever; does NOT affect the live site (serves from `gh-pages`).
 
 **~~Open question~~ RESOLVED:** visual canon-vs-user cue → thin left accent rule on local-only items, one reserved accent color app-wide (§10). Non-blocking polish.
-**Open with Kristina:** her collection workflow + the 2 region gaps (Pappy's Pony, Angelique's Tigress Warrior).
+**Open with Kristina:** her collection workflow. _(The 2 region gaps — Pappy's Pony, Angelique's Tigress Warrior, both VA — are RESOLVED: Kristina doesn't know their N/S yet, so they stay unassigned and she adds a region during ongoing collection. The app already supports this for VA horses — an unassigned VA horse shows an "Assign Herd" button. **MD ponies get NO region** — app TODO: hide the region UI for `state == 'MD'`, see §7.)_
 
 ## 7. App changes (Flutter)
 
@@ -210,7 +210,7 @@ SOURCE → CHANGESET → review (Accept/Reject) → MERGE → BUILD app assets
 - `data_service.dart` — load new fields; `state` (VA/MD) filter; marking search; family resolver by id; **user-photo-primary** ordering (flip `getFirstPhotoForHorse` to prefer `source != 'book'`). **Add `data_version` handling on `init()`:** schema bump → clear all boxes + reload bundled canon (one-time cutover); content bump → reload canon/book box only, preserve user boxes (replaces today's empty-box-only load gate).
 - `horse_list_screen.dart` — VA/MD toggle (top level); within VA, a northern/southern `region` filter (MD shows a flat list, no region); marking filter chips; graceful empty-photo tiles. (No departed/past filter — departed horses aren't in the dataset.)
 - `horse_detail_screen.dart` — **redesigned as ONE continuous "ID card" (hybrid: glanceable, with collapsible low-value tiers), decided 2026-06-12.** Top→bottom:
-  - **At-a-glance identity (always open):** sex · color (roster's "bay pinto", pattern folded in — no separate pattern row) · age/birth year · current `region`; the M/B/F/H flags + `registry` rendered as **small badges**, not rows.
+  - **At-a-glance identity (always open):** sex · color (roster's "bay pinto", pattern folded in — no separate pattern row) · age/birth year · current `region`; the M/B/F/H flags + `registry` rendered as **small badges**, not rows. **Region is VA-only** — for `state == 'MD'` ponies, show **no region line and no "Assign Herd" button** (the MD herd isn't subdivided into N/S; an unassigned VA horse still gets the button). _App TODO: gate the region UI on `state != 'MD'` once MD ponies land._
   - **DESCRIPTION (always open):** `markings` (the field-ID core), eye color, brand. This is the most prominent descriptive block.
   - **BANDS (always open, prominent):** current band + history (last 2 yrs) — Kristina's editable observational data, provenance-accented.
   - **▸ Pedigree / Family (collapsed):** sire/dam tappable → family tree.
@@ -279,7 +279,7 @@ Resolved:
 Pending:
 - ~~**Visual canon-vs-user distinction**~~ — **RESOLVED (see §10 Resolved):** show it via a thin left accent rule on local-only items, one reserved accent color app-wide. Non-blocking polish.
 - **Kristina's console review** is the gate before any real Merge — nothing reaches the authoring DB on defaults until reviewed + Merge clicked.
-- **Region gaps** — Pappy's Pony & Angelique's Tigress Warrior have photos/bands but no N/S; needs Kristina to assign (we can't).
+- ~~**Region gaps**~~ **RESOLVED** — Pappy's Pony & Angelique's Tigress Warrior (both VA) have no N/S because Kristina doesn't know it yet; they stay unassigned and she adds it during ongoing collection. The app already supports this for VA (unassigned VA horse → "Assign Herd" button). **MD ponies get no region at all** (not subdivided) — app TODO: hide region UI for `state == 'MD'` (§7).
 - **Phase 2 blocker** — `herds.php` Current/Past toggle stopped responding to scripts; departed-detection (reads the Past view) must be solved before re-scrape deletions work (see `pedigree-site-scraping` memory).
 
 ## 11. Known bugs / fixes
