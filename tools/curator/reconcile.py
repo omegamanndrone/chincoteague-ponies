@@ -88,31 +88,46 @@ def main():
         s = (s or "").lower()
         return "f" if s in ("mare", "female", "filly") else "m" if s in ("stallion", "male", "gelding", "colt") else s
 
+    # nicknames of a parent (by ped id) -- the book often stored a parent by its
+    # call-name, which the website carries as a nickname of the formal name.
+    def parent_nicks(pid):
+        return [n for n in (roster.get(pid, {}).get("nicknames") or [])]
+
     # --- shared fields: book vs the proposed canonical scrape value ---
+    # 4th element (optional): given a foal id, return the parent ped id whose
+    # nicknames a name-CONFLICT should be checked against (reclassifies to "alias").
     print("=== SHARED FIELDS: app value vs scrape value (canonical source noted) ===")
     fieldmap = [
-        ("color  (<- roster)", lambda h: book[h].get("color"), lambda h: roster.get(h, {}).get("color")),
-        ("sex",                lambda h: sexn(book[h].get("sex")), lambda h: sexn(recs[h].get("sex"))),
-        ("birth_year",         lambda h: book[h].get("birth_year"), lambda h: recs[h].get("birth_year")),
-        ("eye_color",          lambda h: book[h].get("eye_color"), lambda h: recs[h].get("eye_color")),
-        ("auction_price",      lambda h: re.sub(r"[^\d]", "", book[h].get("auction_price") or ""), lambda h: recs[h].get("auction_price")),
-        ("buyback_donor",      lambda h: book[h].get("buyback_donor"), lambda h: recs[h].get("buyback_donor")),
-        ("sire (name)",        lambda h: book[h].get("sire"), lambda h: recs[h].get("sire_name")),
-        ("dam (name)",         lambda h: book[h].get("dam"), lambda h: recs[h].get("dam_name")),
-        ("brand",              lambda h: book[h].get("brand"), lambda h: recs[h].get("brand")),
+        ("color  (<- roster)", lambda h: book[h].get("color"), lambda h: roster.get(h, {}).get("color"), None),
+        ("sex",                lambda h: sexn(book[h].get("sex")), lambda h: sexn(recs[h].get("sex")), None),
+        ("birth_year",         lambda h: book[h].get("birth_year"), lambda h: recs[h].get("birth_year"), None),
+        ("eye_color",          lambda h: book[h].get("eye_color"), lambda h: recs[h].get("eye_color"), None),
+        ("auction_price",      lambda h: re.sub(r"[^\d]", "", book[h].get("auction_price") or ""), lambda h: recs[h].get("auction_price"), None),
+        ("buyback_donor",      lambda h: book[h].get("buyback_donor"), lambda h: recs[h].get("buyback_donor"), None),
+        ("sire (name)",        lambda h: book[h].get("sire"), lambda h: recs[h].get("sire_name"), lambda h: recs[h].get("sire_id")),
+        ("dam (name)",         lambda h: book[h].get("dam"), lambda h: recs[h].get("dam_name"), lambda h: recs[h].get("dam_id")),
+        ("brand",              lambda h: book[h].get("brand"), lambda h: recs[h].get("brand"), None),
     ]
     conflicts = collections.defaultdict(list)
-    for label, getb, getn in fieldmap:
+    aliases = collections.defaultdict(list)
+    for label, getb, getn, getpid in fieldmap:
         cnt = collections.Counter()
         for h in common:
             bk = bucket(getb(h), getn(h))
+            # a name "CONFLICT" is really an alias if the book name matches a
+            # nickname the website lists for the resolved parent.
+            if bk == "CONFLICT" and getpid:
+                bname = norm(getb(h))
+                if bname and any(norm(n) == bname for n in parent_nicks(getpid(h))):
+                    bk = "alias"
+                    aliases[label].append((h, getb(h), getn(h)))
             if bk:
                 cnt[bk] += 1
             if bk == "CONFLICT":
                 conflicts[label].append((h, getb(h), getn(h)))
         same, sp, cf = cnt.get("same", 0), cnt.get("spelling", 0), cnt.get("CONFLICT", 0)
-        bo, no = cnt.get("book-only", 0), cnt.get("new-only", 0)
-        print(f"  {label:22} same={same:3}  spelling={sp:3}  CONFLICT={cf:2}  app-only={bo:2}  scrape-only={no:2}")
+        al, bo, no = cnt.get("alias", 0), cnt.get("book-only", 0), cnt.get("new-only", 0)
+        print(f"  {label:22} same={same:3}  spelling={sp:3}  alias={al:2}  CONFLICT={cf:2}  app-only={bo:2}  scrape-only={no:2}")
 
     # --- new (proposed) fields the scrape adds: coverage over ALL scraped horses ---
     print("\n=== NEW FIELDS added by the scrape (coverage over all {} scraped) ===".format(len(recs)))
@@ -139,13 +154,25 @@ def main():
         verdict = "roster agrees" if ok else "ABSENT from roster term"
         print(f"  prose '{p}' -> norm '{mapped}'  x{n}  ({verdict})")
 
+    # --- aliases auto-resolved via nicknames (book call-name -> website formal name) ---
+    print("\n=== ALIASES auto-resolved (book name is a nickname the site lists; NOT a conflict) ===")
+    for label, items in aliases.items():
+        if items:
+            print(f"  {label}:")
+            for h, bk, nv in items:
+                print(f"    id={h:5}  book={bk!r:24} -> site formal name {nv!r}")
+
     # --- the genuine conflicts to eyeball ---
     print("\n=== CONFLICTS to review (website is canonical, but worth a human glance) ===")
+    any_cf = False
     for label, items in conflicts.items():
         if items:
+            any_cf = True
             print(f"  {label}:")
             for h, bk, nv in items[:20]:
                 print(f"    id={h:5}  app={bk!r:30} scrape={nv!r}")
+    if not any_cf:
+        print("  (none -- every flagged diff resolved to spelling, alias, or website-more-precise)")
 
     if args.field:
         print(f"\n=== every row for '{args.field}' ===")
