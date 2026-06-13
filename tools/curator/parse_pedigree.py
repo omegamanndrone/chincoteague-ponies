@@ -126,12 +126,15 @@ def _registry(fam):
 # a description sentence is "structured" (a field we already extract) if it leads
 # with a known label, is the color/sex/markings sentence, the eye sentence, or a
 # bare genotype. Everything else is free narrative -> the canon `background` blurb.
+# genotype token allows a trailing digit (SW1/n, W20/n) and digit alleles
+_GENO_TOKEN = r"[A-Za-z][A-Za-z0-9]{0,3}/[A-Za-z0-9]{1,3}"
 _STRUCT_PREFIX = re.compile(
-    r"^(?:Breeder|Owner|Auction price|Auction number|Auction Video|Buyback donor|"
-    r"Brand|Registry Number|Registry|Born|First seen)\b|^Buyback donors?\b", re.I)
+    r"^(?:Breeder|Owner|Auction price|Auction number|Auction Video|"
+    r"Brand|Registry Number|Registry|Born|First seen|Buyback don(?:at)?ors?)\b", re.I)
 _COLOR_RE = re.compile(r"\b(?:" + "|".join(COLORS) + r")\b", re.I)
 _SEX_RE = re.compile(r"\b(?:" + "|".join(SEXES) + r")\b", re.I)
-_GENO_ONLY = re.compile(r"(?:[A-Za-z]{1,3}/[A-Za-z]{1,3}\s*,?\s*)+$")
+_GENO_ONLY = re.compile(r"(?:" + _GENO_TOKEN + r"\s*,?\s*)+$")
+_BARE_DATE = re.compile(r"[A-Z][a-z]+(?: \d{1,2},)? \d{4}$")
 
 
 def _is_structured(s):
@@ -142,9 +145,11 @@ def _is_structured(s):
         return True
     if _COLOR_RE.search(s) and _SEX_RE.search(s):   # color/sex/markings sentence
         return True
-    if re.search(r"\beyes$", s, re.I):              # 'Brown eyes'
+    if re.search(r"\beyes?$", s, re.I):             # 'Brown eyes' / 'one brown eye'
         return True
-    if _GENO_ONLY.fullmatch(s):                     # 'TO/TO, A/a, E/e'
+    if _GENO_ONLY.fullmatch(s):                     # 'TO/TO, A/a, E/e', 'e/e, SW1/n'
+        return True
+    if _BARE_DATE.fullmatch(s):                     # stray 'May 9, 2014' / 'September 2018'
         return True
     return False
 
@@ -162,6 +167,17 @@ def _background(fam_html):
     narrative = [s.strip() for s in re.split(r"(?<=\.)\s+", desc) if not _is_structured(s)]
     bg = " ".join(narrative).strip()
     return bg or None
+
+
+def _eye(fam):
+    """Eye color, keeping heterochromia phrasing whole (a great field-ID marker):
+    'One blue, one brown eye' / 'Left blue, right brown eye' -> full phrase;
+    'Brown eyes.' / 'Brown eye.' -> 'Brown'."""
+    m = re.search(r"\b((?:Left|Right|One)\b[^.]*\beyes?)\.", fam, re.I)
+    if m:
+        return re.sub(r"\s+", " ", m.group(1)).strip()
+    m = re.search(r"([A-Za-z]+)\s+eyes?\.", fam)
+    return m.group(1) if m else None
 
 
 def _desc_fields(fam):
@@ -222,16 +238,16 @@ def parse_pedigree(html, hid):
 
     rec.update(_desc_fields(fam))
 
-    rec["eye_color"] = (re.search(r"([A-Za-z]+)\s+eyes\.", fam) or [None, None])[1]
+    rec["eye_color"] = _eye(fam)
     rec["auction_price"] = (re.search(r"Auction price:\s*\$?\s*([\d,]+)", fam) or [None, None])[1]
     rec["auction_number"] = (re.search(r"Auction number:\s*(\S+?)\.", fam) or [None, None])[1]
     # detailed birth date: 'June 25, 2011' or 'May 2004'
     rec["birth_date"] = (re.search(r"Born\s+([A-Z][a-z]+(?:\s+\d{1,2})?,?\s+\d{4})(?!\s+in\b)", fam)
                          or [None, None])[1]
-    rec["buyback_donor"] = (re.search(r"Buyback donors?:\s*([^.]+?)\.", fam) or [None, None])[1]
+    rec["buyback_donor"] = (re.search(r"Buyback don(?:at)?ors?:\s*([^.]+?)\.", fam) or [None, None])[1]
     rec["brand"] = (re.search(r"Brand:\s*([^.]+?)\.", fam) or [None, None])[1]
-    # genotype tokens e.g. E/e, TO/n, A/A, CR/n
-    geno = re.findall(r"\b([A-Za-z]{1,3}/[A-Za-z]{1,3})\b", fam)
+    # genotype tokens e.g. E/e, TO/n, A/A, CR/n, SW1/n
+    geno = re.findall(r"\b(" + _GENO_TOKEN + r")\b", fam)
     rec["genotype"] = ", ".join(geno) if geno else None
 
     # media link-outs
