@@ -168,7 +168,9 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
   }
 
   Future<void> _editBand() async {
-    final stallions = _data.getStallions();
+    // Bands are VA-only — never offer MD/Assateague ponies as stallions or members.
+    final stallions =
+        _data.getStallions().where((h) => h.state != 'MD').toList();
 
     if (!mounted) return;
 
@@ -181,7 +183,8 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
 
     final existingMembers = _data.getCurrentBandMembers(stallion.id!);
     final existingIds = existingMembers.map((m) => m.horseId).toSet();
-    final allHorses = _data.getAllHorses();
+    final allHorses =
+        _data.getAllHorses().where((h) => h.state != 'MD').toList();
 
     if (!mounted) return;
 
@@ -235,7 +238,10 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
                   _buildIdentityCard(),
                   _buildActionBar(),
                   _buildDescriptionCard(),
-                  _buildBandCard(),
+                  // Bands are a VA-only field observation (like region): the wild
+                  // Chincoteague ponies travel in bands, but the MD/Assateague herd
+                  // is more domesticated and isn't observed banding. Hide it for MD.
+                  if (_horse.state != 'MD') _buildBandCard(),
                   _buildPedigreeCard(),
                   _buildRecordsCard(),
                   if (_horse.background != null && _horse.background!.isNotEmpty)
