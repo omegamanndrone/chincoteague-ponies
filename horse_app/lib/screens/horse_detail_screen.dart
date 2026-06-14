@@ -402,15 +402,14 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
 
   // --- At-a-glance identity (always open) ---------------------------------
   Widget _buildIdentityCard() {
+    // One consistent style across the glance line. Region is intentionally NOT
+    // here — it lives on the herd button below, so it isn't duplicated.
+    final parts = <String>[];
+    if ((_horse.sex ?? '').isNotEmpty) parts.add(_cap(_horse.sex));
+    if ((_horse.color ?? '').isNotEmpty) parts.add(_horse.color!);
     final age = _ageString();
-    final glance = [
-      _horse.sex,
-      _horse.color,
-      ?age,
-      // region is VA-only; show it inline when present
-      if (_horse.region != null)
-        '${_horse.region![0].toUpperCase()}${_horse.region!.substring(1)} herd',
-    ].whereType<String>().join(' · ');
+    if (age != null) parts.add(age);
+    final flags = _flagLabels();
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -428,11 +427,17 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
                         fontStyle: FontStyle.italic,
                         color: Colors.grey[700])),
               ),
-            Text(glance,
+            Text(parts.join('  ·  '),
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            if (_badges().isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Wrap(spacing: 6, runSpacing: 6, children: _badges()),
+            if (flags.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(flags.join('  ·  ').toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                    color: Colors.grey[600],
+                  )),
             ],
           ],
         ),
@@ -440,40 +445,39 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
     );
   }
 
+  String _cap(String? s) =>
+      (s == null || s.isEmpty) ? '' : '${s[0].toUpperCase()}${s.substring(1)}';
+
+  /// Age is computed live from the birth year; show both, e.g. "14 yrs (b. 2011)".
   String? _ageString() {
-    final y = int.tryParse(_horse.birthYear ?? '');
-    if (y == null) return null;
-    final age = DateTime.now().year - y;
-    return 'born $y (age $age)';
+    final raw = _horse.birthYear;
+    final y = int.tryParse(raw ?? '');
+    if (y != null) return '${DateTime.now().year - y} yrs (b. $y)';
+    return (raw != null && raw.isNotEmpty) ? 'b. $raw' : null;
   }
 
-  List<Widget> _badges() {
-    final badges = <Widget>[];
-    void add(String label, Color c) => badges.add(Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-              color: c.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(11),
-              border: Border.all(color: c.withValues(alpha: 0.5))),
-          child: Text(label,
-              style: TextStyle(
-                  fontSize: 11, fontWeight: FontWeight.w600, color: c)),
-        ));
-    const green = Color(0xFF2E7D32);
-    if (_horse.registry != null) add(_horse.registry!, Colors.blueGrey);
-    if (_horse.mistyDescendant) add('Misty descendant', green);
-    if (_horse.buyback) add('Buyback', Colors.brown);
-    if (_horse.feral) add('Feral', Colors.deepOrange);
-    if (_horse.halfChincoteague) add('½ Chincoteague', green);
-    return badges;
-  }
+  /// Lineage + registry flags as plain metadata words — rendered as one quiet
+  /// small-caps line (never as buttons/badges).
+  List<String> _flagLabels() => [
+        if (_horse.buyback) 'Buyback',
+        if (_horse.feral) 'Feral',
+        if (_horse.mistyDescendant) 'Misty descendant',
+        if (_horse.halfChincoteague) '½ Chincoteague',
+        if (_horse.registry != null) '${_horse.registry} registry',
+      ];
 
   // --- Description (always open): the field-ID core ------------------------
   Widget _buildDescriptionCard() {
-    final hasAny = _horse.markings != null ||
-        _horse.eyeColor != null ||
-        (_horse.brand != null && _horse.brand!.isNotEmpty);
-    if (!hasAny) return const SizedBox.shrink();
+    // Uniform label-rows so the block reads consistently (markings leads — it's
+    // the field-ID core).
+    final rows = <Widget>[
+      if (_horse.markings != null && _horse.markings!.isNotEmpty)
+        _detailRow('Markings', _horse.markings!),
+      if (_horse.eyeColor != null) _detailRow('Eyes', _horse.eyeColor!),
+      if (_horse.brand != null && _horse.brand!.isNotEmpty)
+        _detailRow('Brand', _horse.brand!),
+    ];
+    if (rows.isEmpty) return const SizedBox.shrink();
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Padding(
@@ -484,15 +488,7 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
             const Text('Description',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const Divider(),
-            if (_horse.markings != null && _horse.markings!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text(_horse.markings!,
-                    style: const TextStyle(fontSize: 15, height: 1.35)),
-              ),
-            if (_horse.eyeColor != null) _detailRow('Eyes', _horse.eyeColor!),
-            if (_horse.brand != null && _horse.brand!.isNotEmpty)
-              _detailRow('Brand', _horse.brand!),
+            ...rows,
           ],
         ),
       ),

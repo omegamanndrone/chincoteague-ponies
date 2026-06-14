@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/horse.dart';
@@ -19,7 +20,10 @@ class DataService {
   //   untouched — this is also the fix for the old "updates never reach
   //   existing users" bug (data used to load only when the box was empty).
   static const int _bundledSchemaVersion = 1;
-  static const int _bundledContentVersion = 1;
+  // v2 = Phase 2 content update (website re-scrape): +99 ponies (11 VA + 88 MD),
+  // -6 departed, full enrichment. A content bump reloads canon only and PRESERVES
+  // the user's local boxes (notes/bands/region overrides/photos).
+  static const int _bundledContentVersion = 2;
 
   late Box _meta;
   late Box _horsesBox; // CANON horses (pedigree-keyed) + per-horse photo lists
@@ -65,6 +69,11 @@ class DataService {
     await _meta.put('contentVersion', _bundledContentVersion);
     _initialized = true;
   }
+
+  /// Test-only: clear the initialized flag so a subsequent init() re-opens boxes
+  /// (each test uses its own temp Hive dir). Not used in production.
+  @visibleForTesting
+  void resetForTest() => _initialized = false;
 
   // --- Boot-time data loading ---
 
