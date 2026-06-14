@@ -250,10 +250,10 @@ K's YouTube channel ─(YouTube Data API, our machine)─▶ changeset (proposed
 
 0. **✅ DONE — Build the curator console** (`tools/curator/`, Flask) — reviewable changeset/merge pipeline. Ingested K's backup (capture → YOLO-crop+watermark → accept/reject → merge), departed-horse keep/discard gate, offline ID-remap into canon.
 1. **✅ DONE (deployed + verified 2026-06-12)** — Converted system to pedigree_id; rebuilt assets with K's data baked in; deployed the cutover build — her device self-overwrote on the `schemaVersion` bump (notes remapped in-app, no manual restore).
-2. **🔜 NEXT (UNBLOCKED 2026-06-12)** — Wire the re-scrape source into the same console; add 11 missing VA ponies + 88 MD; delete the 6 departed horses (gate clean); surface enrichment + the redesigned ID card (§7). _Scraper + parser + reconcile already built & validated; remaining = `background` capture, normalization-map module, `make_changeset.py`, merge → build → deploy as a content update._
-3. Markings search.
-4. MD herd + VA/MD toggle.
-5. Family tree navigation.
+2. **✅ DONE — DEPLOYED LIVE 2026-06-13.** Re-scrape source wired into the console; added 11 VA + 88 MD; deleted the 6 departed; enrichment + redesigned ID card + Chincoteague/Assateague island switch all shipped as a content update (live serving 236). See the §6 breadcrumb.
+3. **⭐ NEXT PRIORITY — Markings search.** Field-ID an unknown pony by its visible markings — the whole point of having scraped the markings data. Data already shipped (`horse.markings`, 185/236 ponies; structured token list recoverable at build time). **Full design + the real 57-token vocabulary + the data-approach fork (runtime tokenization vs build-time facets) + match logic + UI placement are documented in the `markings-search-plan` memory** so it can be resumed cold after the soft-launch. Today the text search already substring-matches markings; Phase 3 = the grouped multi-select facet filter.
+4. **✅ DONE** — MD herd + VA/MD toggle (shipped early as the island switch in Phase 2).
+5. **Family tree navigation** — multi-gen view (today only sire/dam gen-1 navigate); see the `pedigree-expansion-todo` memory.
 6. Polish (DSC "Photos at DSC" link-out, device-photo replacement UX, history-blurb groundwork for sale).
 7. **Video ingest (§8.1)** — index Kristina's YouTube channel at build time → reviewable horse↔video matches → bake `videos[]` into canon; per-horse video link prefers her video over the identifyingchincoteagueponies.com fallback. New curator source; reuses the changeset/console/merge machinery.
 
