@@ -170,6 +170,33 @@ class DataService {
     }
   }
 
+  // --- Selected island (Chincoteague=VA / Assateague=MD) ---
+  //
+  // The app shows ONE island at a time (the two herds never mix); the list
+  // screen filters by `state`. Persisted in _meta so the last island is
+  // remembered across launches. Defaults to VA (Chincoteague) — the original
+  // herd and where Kristina's collected data lives.
+
+  /// 'VA' | 'MD'. Defaults to 'VA'.
+  String getSelectedState() =>
+      _meta.get('selectedState', defaultValue: 'VA') as String;
+
+  Future<void> setSelectedState(String state) async {
+    await _meta.put('selectedState', state);
+  }
+
+  /// True once any MD (Assateague) horse exists in canon — lets the UI hide the
+  /// island switch until the MD herd actually ships (pre-Phase-2 builds are VA-only).
+  bool hasMarylandHerd() {
+    for (final key in _horsesBox.keys) {
+      if (key is int) {
+        final h = _horsesBox.get(key);
+        if (h is Map && h['state'] == 'MD') return true;
+      }
+    }
+    return false;
+  }
+
   // --- Horses ---
 
   /// Overlay the user's local data (notes, herd, region override) onto a canon

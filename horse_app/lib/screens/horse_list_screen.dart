@@ -14,26 +14,51 @@ class HorseListScreen extends StatefulWidget {
 
 class _HorseListScreenState extends State<HorseListScreen> {
   final _data = DataService.instance;
-  List<Horse> _horses = [];
+  List<Horse> _allHorses = []; // every horse (both islands)
+  List<Horse> _horses = []; // scoped to the selected island
   List<Horse> _filtered = [];
   List<String> _colors = [];
   // Thumbnail cache: horse id -> image bytes
   final Map<int, Uint8List?> _thumbnails = {};
   String? _selectedColor;
-  String? _selectedHerd;
+  String? _selectedRegion; // northern | southern (VA only)
   String _searchQuery = '';
   bool _loading = true;
+  // 'VA' = Chincoteague (CVFD) · 'MD' = Assateague (NPS). The two herds never
+  // mix; the app shows one island at a time, switched from the title.
+  late String _island;
   final _searchController = TextEditingController();
+
+  static const _islandName = {'VA': 'Chincoteague', 'MD': 'Assateague'};
+  static const _islandSubtitle = {'VA': 'Virginia · CVFD herd', 'MD': 'Maryland · NPS herd'};
 
   @override
   void initState() {
     super.initState();
+    _island = _data.getSelectedState();
+    _loadData();
+  }
+
+  /// A horse belongs to the selected island. Pre-Phase-2 data has state=null —
+  /// treat those as VA (they're all Chincoteague) so the app works before the
+  /// MD herd ships.
+  bool _onIsland(Horse h) => (h.state ?? 'VA') == _island;
+
+  Future<void> _switchIsland(String island) async {
+    if (island == _island) return;
+    await _data.setSelectedState(island);
+    setState(() {
+      _island = island;
+      _selectedColor = null;
+      _selectedRegion = null;
+    });
     _loadData();
   }
 
   Future<void> _loadData() async {
     setState(() => _loading = true);
-    _horses = _data.getAllHorses();
+    _allHorses = _data.getAllHorses();
+    _horses = _allHorses.where(_onIsland).toList();
     _colors = _horses
         .map((h) => h.color)
         .whereType<String>()
@@ -84,7 +109,8 @@ class _HorseListScreenState extends State<HorseListScreen> {
             (h.dam?.toLowerCase().contains(q) ?? false) ||
             (h.auctionPrice?.toLowerCase().contains(q) ?? false) ||
             (h.buybackDonor?.toLowerCase().contains(q) ?? false) ||
-            (h.herd?.toLowerCase().contains(q) ?? false);
+            (h.markings?.toLowerCase().contains(q) ?? false) ||
+            (h.region?.toLowerCase().contains(q) ?? false);
       }).toList();
     }
 
@@ -92,8 +118,9 @@ class _HorseListScreenState extends State<HorseListScreen> {
       result = result.where((h) => h.color == _selectedColor).toList();
     }
 
-    if (_selectedHerd != null) {
-      result = result.where((h) => h.herd == _selectedHerd).toList();
+    // Region (N/S) is VA-only; never filters the MD list.
+    if (_island == 'VA' && _selectedRegion != null) {
+      result = result.where((h) => h.region == _selectedRegion).toList();
     }
 
     setState(() => _filtered = result);
@@ -170,9 +197,10 @@ class _HorseListScreenState extends State<HorseListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final showSwitch = _data.hasMarylandHerd();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chincoteague Ponies'),
+        title: showSwitch ? _buildIslandTitle() : const Text('Chincoteague Ponies'),
         backgroundColor: const Color(0xFF2E7D32),
         foregroundColor: Colors.white,
         actions: [
@@ -195,7 +223,7 @@ class _HorseListScreenState extends State<HorseListScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search by name, brand, color, year...',
+                hintText: 'Search ${_islandName[_island]} by name, markings, color...',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -231,19 +259,25 @@ class _HorseListScreenState extends State<HorseListScreen> {
                   selected: _selectedColor != null,
                   onSelected: (_) => _showColorPicker(),
                 ),
-                const SizedBox(width: 8),
-                FilterChip(
-                  label: Text(_selectedHerd ?? 'All Herds'),
-                  selected: _selectedHerd != null,
-                  onSelected: (_) => _showHerdPicker(),
-                ),
-                if (_selectedColor != null || _selectedHerd != null) ...[
+                // Region (N/S) is Kristina's VA-only sub-herd split; the MD herd
+                // isn't subdivided, so the chip only appears on Chincoteague.
+                if (_island == 'VA') ...[
+                  const SizedBox(width: 8),
+                  FilterChip(
+                    label: Text(_selectedRegion != null
+                        ? '${_selectedRegion![0].toUpperCase()}${_selectedRegion!.substring(1)} Herd'
+                        : 'All Regions'),
+                    selected: _selectedRegion != null,
+                    onSelected: (_) => _showRegionPicker(),
+                  ),
+                ],
+                if (_selectedColor != null || _selectedRegion != null) ...[
                   const SizedBox(width: 8),
                   ActionChip(
                     label: const Text('Clear Filters'),
                     onPressed: () {
                       _selectedColor = null;
-                      _selectedHerd = null;
+                      _selectedRegion = null;
                       _applyFilters();
                     },
                   ),
@@ -294,6 +328,59 @@ class _HorseListScreenState extends State<HorseListScreen> {
     );
   }
 
+  /// Tappable app-bar title = the island switch. Shows the current island name
+  /// with a ▾ caret and the herd-authority subtitle; tapping opens a menu to
+  /// switch to the parallel island.
+  Widget _buildIslandTitle() {
+    return PopupMenuButton<String>(
+      onSelected: _switchIsland,
+      offset: const Offset(0, 48),
+      itemBuilder: (context) => [
+        for (final s in const ['VA', 'MD'])
+          PopupMenuItem(
+            value: s,
+            child: Row(
+              children: [
+                Icon(s == _island ? Icons.check : Icons.location_on_outlined,
+                    size: 18, color: const Color(0xFF2E7D32)),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_islandName[s]!,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Text(_islandSubtitle[s]!,
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                  ],
+                ),
+              ],
+            ),
+          ),
+      ],
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
+                children: [
+                  Text(_islandName[_island] ?? 'Chincoteague',
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w600)),
+                  const Icon(Icons.arrow_drop_down),
+                ],
+              ),
+              Text(_islandSubtitle[_island] ?? '',
+                  style: const TextStyle(fontSize: 11, color: Colors.white70)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showColorPicker() {
     showModalBottomSheet(
       context: context,
@@ -328,53 +415,39 @@ class _HorseListScreenState extends State<HorseListScreen> {
     );
   }
 
-  void _showHerdPicker() {
+  void _showRegionPicker() {
+    int countRegion(String? r) => _horses.where((h) => h.region == r).length;
     showModalBottomSheet(
       context: context,
       builder: (context) => ListView(
         children: [
           ListTile(
-            title: const Text('All Herds'),
+            title: const Text('All Regions'),
             onTap: () {
-              _selectedHerd = null;
+              _selectedRegion = null;
               _applyFilters();
               Navigator.pop(context);
             },
           ),
-          ListTile(
-            title: const Text('Northern Herd'),
-            trailing: Text(
-              '${_horses.where((h) => h.herd == 'northern').length}',
-              style: TextStyle(color: Colors.grey[600]),
+          for (final region in const ['northern', 'southern'])
+            ListTile(
+              title: Text('${region[0].toUpperCase()}${region.substring(1)} Herd'),
+              trailing: Text('${countRegion(region)}',
+                  style: TextStyle(color: Colors.grey[600])),
+              onTap: () {
+                _selectedRegion = region;
+                _applyFilters();
+                Navigator.pop(context);
+              },
             ),
-            onTap: () {
-              _selectedHerd = 'northern';
-              _applyFilters();
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            title: const Text('Southern Herd'),
-            trailing: Text(
-              '${_horses.where((h) => h.herd == 'southern').length}',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-            onTap: () {
-              _selectedHerd = 'southern';
-              _applyFilters();
-              Navigator.pop(context);
-            },
-          ),
           ListTile(
             title: const Text('Unassigned'),
-            trailing: Text(
-              '${_horses.where((h) => h.herd == null).length}',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
+            trailing: Text('${countRegion(null)}',
+                style: TextStyle(color: Colors.grey[600])),
             onTap: () {
-              _selectedHerd = null;
               setState(() {
-                _filtered = _horses.where((h) => h.herd == null).toList();
+                _selectedRegion = null;
+                _filtered = _horses.where((h) => h.region == null).toList();
               });
               Navigator.pop(context);
             },
@@ -445,7 +518,7 @@ class _HorseListTile extends StatelessWidget {
           [
             horse.color,
             horse.sex,
-            if (horse.herd != null) '${horse.herd} herd',
+            if (horse.region != null) '${horse.region} herd',
           ].whereType<String>().join(' - '),
         ),
         trailing: const Icon(Icons.chevron_right),

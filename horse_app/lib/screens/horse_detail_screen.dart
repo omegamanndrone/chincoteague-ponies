@@ -232,14 +232,18 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildPhotoGallery(),
+                  _buildIdentityCard(),
                   _buildActionBar(),
-                  _buildDetailsCard(),
+                  _buildDescriptionCard(),
                   _buildBandCard(),
-                  if (_horse.bookInfo != null && _horse.bookInfo!.isNotEmpty)
-                    _buildBookInfoCard(),
+                  _buildPedigreeCard(),
+                  _buildRecordsCard(),
+                  if (_horse.background != null && _horse.background!.isNotEmpty)
+                    _buildBackgroundCard(),
                   _buildNotesCard(),
                   if (_horse.qrVideoUrl != null ||
-                      _horse.qrPedigreeUrl != null)
+                      _horse.qrPedigreeUrl != null ||
+                      _horse.dscPhotoUrl != null)
                     _buildLinksCard(),
                   if (_hasLocalData()) Provenance.legend(),
                   const SizedBox(height: 24),
@@ -358,27 +362,32 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
   }
 
   Widget _buildActionBar() {
+    // Region (N/S) is the VA-only sub-herd split; the MD (Assateague) herd isn't
+    // subdivided, so MD ponies get no "Assign Herd" button.
+    final showHerd = _horse.state != 'MD';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _setHerd,
-              // Show the canon region (her harvested N/S); accent ONLY when it's
-              // her local override of canon, not canon itself.
-              style: _data.isRegionUserOverride(_horse.id!)
-                  ? OutlinedButton.styleFrom(
-                      foregroundColor: Provenance.local,
-                      side: const BorderSide(color: Provenance.local))
-                  : null,
-              icon: const Icon(Icons.location_on),
-              label: Text(_horse.region != null
-                  ? '${_horse.region![0].toUpperCase()}${_horse.region!.substring(1)} Herd'
-                  : 'Assign Herd'),
+          if (showHerd) ...[
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _setHerd,
+                // Show the canon region (her harvested N/S); accent ONLY when it's
+                // her local override of canon, not canon itself.
+                style: _data.isRegionUserOverride(_horse.id!)
+                    ? OutlinedButton.styleFrom(
+                        foregroundColor: Provenance.local,
+                        side: const BorderSide(color: Provenance.local))
+                    : null,
+                icon: const Icon(Icons.location_on),
+                label: Text(_horse.region != null
+                    ? '${_horse.region![0].toUpperCase()}${_horse.region!.substring(1)} Herd'
+                    : 'Assign Herd'),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
+            const SizedBox(width: 8),
+          ],
           Expanded(
             child: OutlinedButton.icon(
               onPressed: _pickPhoto,
@@ -391,7 +400,18 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
     );
   }
 
-  Widget _buildDetailsCard() {
+  // --- At-a-glance identity (always open) ---------------------------------
+  Widget _buildIdentityCard() {
+    final age = _ageString();
+    final glance = [
+      _horse.sex,
+      _horse.color,
+      ?age,
+      // region is VA-only; show it inline when present
+      if (_horse.region != null)
+        '${_horse.region![0].toUpperCase()}${_horse.region!.substring(1)} herd',
+    ].whereType<String>().join(' · ');
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Padding(
@@ -399,28 +419,172 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Horse Details',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const Divider(),
-            if (_horse.nickname != null)
-              _detailRow('Nickname', _horse.nickname!),
-            _detailRow('Color', _horse.color ?? 'Unknown'),
-            _detailRow('Sex', _horse.sex ?? 'Unknown'),
-            _detailRow('Brand', _horse.brand ?? 'None'),
-            if (_horse.birthDate != null)
-              _detailRow('Birth Date', _horse.birthDate!),
-            if (_horse.birthYear != null)
-              _detailRow('Birth Year', _horse.birthYear!),
-            if (_horse.eyeColor != null)
-              _detailRow('Eyes', _horse.eyeColor!),
-            if (_horse.auctionPrice != null)
-              _detailRow('Auction Price', _horse.auctionPrice!),
-            if (_horse.buybackDonor != null)
-              _detailRow('Buyback Donor', _horse.buybackDonor!),
-            if (_horse.sire != null) _detailRow('Sire (Father)', _horse.sire!),
-            if (_horse.dam != null) _detailRow('Dam (Mother)', _horse.dam!),
+            if (_horse.nickname != null && _horse.nickname!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text('"${_horse.nickname}"',
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontStyle: FontStyle.italic,
+                        color: Colors.grey[700])),
+              ),
+            Text(glance,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            if (_badges().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(spacing: 6, runSpacing: 6, children: _badges()),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  String? _ageString() {
+    final y = int.tryParse(_horse.birthYear ?? '');
+    if (y == null) return null;
+    final age = DateTime.now().year - y;
+    return 'born $y (age $age)';
+  }
+
+  List<Widget> _badges() {
+    final badges = <Widget>[];
+    void add(String label, Color c) => badges.add(Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+              color: c.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(color: c.withValues(alpha: 0.5))),
+          child: Text(label,
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: c)),
+        ));
+    const green = Color(0xFF2E7D32);
+    if (_horse.registry != null) add(_horse.registry!, Colors.blueGrey);
+    if (_horse.mistyDescendant) add('Misty descendant', green);
+    if (_horse.buyback) add('Buyback', Colors.brown);
+    if (_horse.feral) add('Feral', Colors.deepOrange);
+    if (_horse.halfChincoteague) add('½ Chincoteague', green);
+    return badges;
+  }
+
+  // --- Description (always open): the field-ID core ------------------------
+  Widget _buildDescriptionCard() {
+    final hasAny = _horse.markings != null ||
+        _horse.eyeColor != null ||
+        (_horse.brand != null && _horse.brand!.isNotEmpty);
+    if (!hasAny) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Description',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Divider(),
+            if (_horse.markings != null && _horse.markings!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(_horse.markings!,
+                    style: const TextStyle(fontSize: 15, height: 1.35)),
+              ),
+            if (_horse.eyeColor != null) _detailRow('Eyes', _horse.eyeColor!),
+            if (_horse.brand != null && _horse.brand!.isNotEmpty)
+              _detailRow('Brand', _horse.brand!),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- Pedigree / Family (collapsed) --------------------------------------
+  Widget _buildPedigreeCard() {
+    if (_horse.sire == null && _horse.dam == null) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: ExpansionTile(
+        leading: const Icon(Icons.account_tree, color: Color(0xFF2E7D32)),
+        title: const Text('Pedigree / Family',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        children: [
+          if (_horse.sire != null) _parentRow('Sire', _horse.sire!, _horse.sireId),
+          if (_horse.dam != null) _parentRow('Dam', _horse.dam!, _horse.damId),
+        ],
+      ),
+    );
+  }
+
+  /// A parent row. Tappable when the parent resolves to a horse in the current
+  /// herds (pedigree id present in canon); otherwise a plain name (the tree
+  /// dead-ends at ancestors not in the current VA/MD herds, per the plan).
+  Widget _parentRow(String label, String name, int? parentId) {
+    final target = parentId != null ? _data.getHorse(parentId) : null;
+    final tappable = target != null;
+    return InkWell(
+      onTap: tappable
+          ? () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => HorseDetailScreen(horse: target)),
+              ).then((_) => _loadData())
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 60,
+              child: Text(label,
+                  style: TextStyle(
+                      color: Colors.grey[600], fontWeight: FontWeight.w500)),
+            ),
+            Expanded(
+              child: Text(name,
+                  style: TextStyle(
+                    color: tappable ? const Color(0xFF2E7D32) : Colors.black87,
+                    decoration: tappable ? TextDecoration.underline : null,
+                    fontWeight: tappable ? FontWeight.w500 : FontWeight.normal,
+                  )),
+            ),
+            if (tappable)
+              const Icon(Icons.chevron_right, size: 18, color: Color(0xFF2E7D32)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- Records & registry (collapsed) -------------------------------------
+  Widget _buildRecordsCard() {
+    final rows = <Widget>[
+      if (_horse.breeder != null) _detailRow('Breeder', _horse.breeder!),
+      if (_horse.owner != null) _detailRow('Owner', _horse.owner!),
+      if (_horse.birthDate != null) _detailRow('Born', _horse.birthDate!),
+      if (_horse.birthLocation != null)
+        _detailRow('Birthplace', _horse.birthLocation!),
+      if (_horse.auctionPrice != null)
+        _detailRow('Auction Price', _horse.auctionPrice!),
+      if (_horse.auctionNumber != null)
+        _detailRow('Auction No.', _horse.auctionNumber!),
+      if (_horse.buybackDonor != null)
+        _detailRow('Buyback Donor', _horse.buybackDonor!),
+      if (_horse.registry != null)
+        _detailRow('Registry',
+            '${_horse.registry}${_horse.registryNumber != null ? ' ${_horse.registryNumber}' : ''}'),
+      if (_horse.genotype != null) _detailRow('Genotype', _horse.genotype!),
+    ];
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: ExpansionTile(
+        leading: const Icon(Icons.assignment, color: Color(0xFF2E7D32)),
+        title: const Text('Records & registry',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        children: rows,
       ),
     );
   }
@@ -558,25 +722,22 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
     );
   }
 
-  Widget _buildBookInfoCard() {
+  // --- Background (collapsed): the canon narrative (replaces "From the Book") -
+  Widget _buildBackgroundCard() {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Colors.amber[50],
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(children: [
-              Icon(Icons.menu_book, size: 20, color: Colors.brown),
-              SizedBox(width: 8),
-              Text('From the Book',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            ]),
-            const SizedBox(height: 8),
-            Text(_horse.bookInfo!),
-          ],
-        ),
+      child: ExpansionTile(
+        leading: const Icon(Icons.menu_book, color: Color(0xFF2E7D32)),
+        title: const Text('Background',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(_horse.background!,
+                style: const TextStyle(height: 1.4)),
+          ),
+        ],
       ),
     );
   }
@@ -641,6 +802,9 @@ class _HorseDetailScreenState extends State<HorseDetailScreen> {
               _linkRow(Icons.videocam, 'Video Clip', _horse.qrVideoUrl!),
             if (_horse.qrPedigreeUrl != null)
               _linkRow(Icons.account_tree, 'Pedigree', _horse.qrPedigreeUrl!),
+            // Copyrighted DSC gallery — link out only, never rehost (plan §8).
+            if (_horse.dscPhotoUrl != null)
+              _linkRow(Icons.photo_camera, 'Photos at DSC', _horse.dscPhotoUrl!),
           ],
         ),
       ),

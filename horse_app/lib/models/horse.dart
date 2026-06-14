@@ -14,7 +14,7 @@ class Horse {
   final String? dam;
   final String? herd;
   final String? notes;
-  final String? bookInfo;
+  final String? background; // canon narrative (scrape); supersedes the old book_info
   final String? qrVideoUrl;
   final String? qrPedigreeUrl;
   final int? bookPage;
@@ -61,7 +61,7 @@ class Horse {
     this.dam,
     this.herd,
     this.notes,
-    this.bookInfo,
+    this.background,
     this.qrVideoUrl,
     this.qrPedigreeUrl,
     this.bookPage,
@@ -112,7 +112,7 @@ class Horse {
       dam: map['dam'] as String?,
       herd: map['herd'] as String?,
       notes: map['notes'] as String?,
-      bookInfo: map['book_info'] as String?,
+      background: map['background'] as String?,
       qrVideoUrl: map['qr_video_url'] as String?,
       qrPedigreeUrl: map['qr_pedigree_url'] as String?,
       bookPage: map['book_page'] as int?,
@@ -154,7 +154,7 @@ class Horse {
       'dam': dam,
       'herd': herd,
       'notes': notes,
-      'book_info': bookInfo,
+      'background': background,
       'qr_video_url': qrVideoUrl,
       'qr_pedigree_url': qrPedigreeUrl,
       'book_page': bookPage,
@@ -195,7 +195,7 @@ class Horse {
     String? dam,
     String? herd,
     String? notes,
-    String? bookInfo,
+    String? background,
     String? qrVideoUrl,
     String? qrPedigreeUrl,
     int? bookPage,
@@ -234,7 +234,7 @@ class Horse {
       dam: dam ?? this.dam,
       herd: herd ?? this.herd,
       notes: notes ?? this.notes,
-      bookInfo: bookInfo ?? this.bookInfo,
+      background: background ?? this.background,
       qrVideoUrl: qrVideoUrl ?? this.qrVideoUrl,
       qrPedigreeUrl: qrPedigreeUrl ?? this.qrPedigreeUrl,
       bookPage: bookPage ?? this.bookPage,
