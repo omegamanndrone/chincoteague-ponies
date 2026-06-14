@@ -26,21 +26,11 @@ import re
 import sqlite3
 import collections
 
+from normalize import PATTERN_NORM, norm, sexn, bucket  # shared normalization map
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "out", "scrape")
 DB = os.path.normpath(os.path.join(HERE, "..", "..", "horses.db"))
-
-# draft normalization map (prose term -> common usage). Confirm/extend with the user.
-PATTERN_NORM = {"tobiano": "pinto"}
-
-
-def norm(s):
-    s = (s or "").lower().strip()
-    words = {"fifteen": "15", "twelve": "12", "eleven": "11", "ten": "10", "two": "2"}
-    for w, d in words.items():
-        s = re.sub(r"\b" + w + r"\b", d, s)
-    s = s.replace("&", "and")
-    return re.sub(r"[^a-z0-9 ]", "", s).strip()
 
 
 def load():
@@ -60,19 +50,6 @@ def load():
     return recs, roster, book
 
 
-def bucket(book_val, new_val):
-    if not book_val and not new_val:
-        return None
-    if not book_val or not new_val:
-        return "new-only" if new_val else "book-only"
-    a, b = norm(book_val), norm(new_val)
-    if a == b:
-        return "same"
-    if a in b or b in a:
-        return "spelling"
-    return "CONFLICT"
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--field", help="dump every overlapping row for one field")
@@ -83,11 +60,7 @@ def main():
     print(f"{len(common)} horses present in both app and scrape "
           f"({len(book)} app, {len(recs)} scraped).\n")
 
-    # sex needs canonical mapping book(mare/stallion) <-> site(female/male)
-    def sexn(s):
-        s = (s or "").lower()
-        return "f" if s in ("mare", "female", "filly") else "m" if s in ("stallion", "male", "gelding", "colt") else s
-
+    # sex canonical mapping book(mare/stallion) <-> site(female/male) is sexn (imported).
     # nicknames of a parent (by ped id) -- the book often stored a parent by its
     # call-name, which the website carries as a nickname of the formal name.
     def parent_nicks(pid):

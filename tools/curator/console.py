@@ -24,12 +24,18 @@ import merge as merge_mod
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
 STATE = OUT / "review_state.json"
-TYPES = ("photo", "region", "band", "note")
+# All known types across both sources (ingest backup + website scrape). The header
+# and dashboard show only those PRESENT in the loaded changeset, so one console
+# serves either review session.
+ALL_TYPES = ("photo", "region", "band", "note", "field_change", "new_horse", "departed")
 ACTION_BY_TYPE = {  # buttons offered per type
     "photo": ["accept", "reject"],
     "region": ["accept", "reject"],
     "band": ["accept", "reject"],
     "note": ["skip"],  # local-only, not canon
+    "field_change": ["accept", "reject"],  # accept = take website; reject = keep book
+    "new_horse": ["accept", "reject"],     # accept = add pony;     reject = skip it
+    "departed": ["accept", "reject"],      # accept = delete pony;  reject = keep it
 }
 
 app = Flask(__name__)
@@ -37,6 +43,12 @@ app = Flask(__name__)
 
 def load_changeset() -> dict:
     return json.loads((OUT / "changeset.json").read_text(encoding="utf-8"))
+
+
+def present_types(cs: dict) -> list[str]:
+    """Types actually present in this changeset, in canonical order."""
+    have = {it["type"] for it in cs["items"]}
+    return [t for t in ALL_TYPES if t in have]
 
 
 def load_state() -> dict:
@@ -90,7 +102,7 @@ BASE = """
 </style></head><body>
 <header><b>🐴 Curator</b>
  <a href="/" class="{{'active' if active=='home' else ''}}">Dashboard</a>
- {% for t in types %}<a href="/review/{{t}}" class="{{'active' if active==t else ''}}">{{t|capitalize}}s</a>{% endfor %}
+ {% for t in types %}<a href="/review/{{t}}" class="{{'active' if active==t else ''}}">{{ t.replace('_',' ')|title }}{{ '' if t.endswith('ed') else 's' }}</a>{% endfor %}
 </header><main>{{ body|safe }}</main>
 <script>
 function decide(id,action,el){
@@ -110,24 +122,28 @@ function doMerge(){
  if(!confirm('Merge all ACCEPTED items into the authoring DB? (additive, idempotent)'))return;
  document.getElementById('mergeout').textContent='merging…';
  fetch('/merge',{method:'POST'}).then(r=>r.json()).then(d=>{
-  document.getElementById('mergeout').textContent=
-   'merged → photos '+d.photo+', regions '+d.region+', bands '+d.band+
-   ' | rejected '+d.rejected+', skipped '+d.skipped+', notes(local) '+d.notes_local;
+  // generic: show every numeric key the merge report returns (ingest or scrape)
+  const parts=Object.keys(d).filter(k=>typeof d[k]==='number').map(k=>k+' '+d[k]);
+  document.getElementById('mergeout').textContent='merged → '+parts.join(', ');
  });
 }
 </script></body></html>
 """
 
 
-def page(title, active, body):
-    return render_template_string(BASE, title=title, active=active, body=body, types=TYPES)
+def page(title, active, body, types=None):
+    if types is None:
+        types = present_types(load_changeset())
+    return render_template_string(BASE, title=title, active=active, body=body, types=types)
 
 
 @app.route("/")
 def home():
     cs = load_changeset()
     state = load_state()
-    by_type = {t: {"total": 0, "accept": 0, "reject": 0, "skip": 0, "review": 0, "decided": 0} for t in TYPES}
+    types = present_types(cs)
+    is_scrape = cs.get("source") == "scrape"
+    by_type = {t: {"total": 0, "accept": 0, "reject": 0, "skip": 0, "review": 0, "decided": 0} for t in types}
     for it in cs["items"]:
         d = by_type[it["type"]]
         d["total"] += 1
@@ -138,37 +154,96 @@ def home():
     warn_html = ""
     if cs.get("warnings"):
         lis = "".join(f"<li>{w}</li>" for w in cs["warnings"])
-        warn_html = f'<div class=warn><b>{len(cs["warnings"])} ingest warning(s):</b><ul>{lis}</ul></div>'
+        warn_html = f'<div class=warn><b>{len(cs["warnings"])} warning(s):</b><ul>{lis}</ul></div>'
+    # scrape header carries the roster arithmetic so it's obvious what will change
+    if is_scrape:
+        rs = cs.get("roster_summary", {})
+        warn_html = (f'<div class=warn>Website re-scrape → <b>{rs.get("current_total")}</b> current ponies: '
+                     f'{rs.get("overlap")} existing + <b>{rs.get("new")} new</b> '
+                     f'({rs.get("new_va")} VA, {rs.get("new_md")} MD), '
+                     f'<b>{rs.get("departed")} departed</b> (removed). '
+                     f'Website values are canonical; book-only fields are preserved (don\'t-clobber).</div>'
+                     + warn_html)
+    sub_label = {"note": lambda d: f'local-only {d["skip"]}',
+                 "departed": lambda d: f'delete {d["accept"]} · keep {d["reject"]}',
+                 "field_change": lambda d: f'website {d["accept"]} · keep book {d["reject"]}',
+                 "new_horse": lambda d: f'add {d["accept"]} · skip {d["reject"]}'}
     boxes = ""
-    for t in TYPES:
+    for t in types:
         d = by_type[t]
-        sub = f'accept {d["accept"]} · reject {d["reject"]}' if t != "note" else f'local-only {d["skip"]}'
+        sub = sub_label.get(t, lambda d: f'accept {d["accept"]} · reject {d["reject"]}')(d)
+        label = t.replace("_", " ").title() + ("s" if not t.endswith("ed") else "")
         boxes += (f'<a class=box href="/review/{t}"><div class=big>{d["total"]}</div>'
-                  f'<div class=name>{t.capitalize()}s</div>'
+                  f'<div class=name>{label}</div>'
                   f'<div class=meta>{sub}<br>reviewed {d["decided"]}/{d["total"]}</div></a>')
-    body = (f'<h2>Ingest review — {cs.get("source_file","")}</h2>'
+    heading = ("Website re-scrape review" if is_scrape
+               else f'Ingest review — {cs.get("source_file","")}')
+    footer = ('<p class=meta>Website is canonical for conflicts; reject a field_change to keep the '
+              'book value. Departed ponies with no attached data default to <b>delete</b>.</p>'
+              if is_scrape else
+              '<p class=meta>Notes are local-only and never merged to canon. '
+              'Stale bands default to <b>reject</b>; everything else defaults to <b>accept</b>.</p>')
+    body = (f'<h2>{heading}</h2>'
             f'{warn_html}<div class=dash>{boxes}</div>'
             f'<div class=mergebar><button id=merge onclick=doMerge()>Merge accepted → authoring DB</button>'
-            f'<span id=mergeout></span></div>'
-            f'<p class=meta>Notes are local-only and never merged to canon. '
-            f'Stale bands default to <b>reject</b>; everything else defaults to <b>accept</b>.</p>')
-    return page("Dashboard", "home", body)
+            f'<span id=mergeout></span></div>{footer}')
+    return page("Dashboard", "home", body, types)
 
 
 @app.route("/review/<t>")
 def review(t):
-    if t not in TYPES:
+    if t not in ALL_TYPES:
         return "unknown type", 404
     cs = load_changeset()
     state = load_state()
     items = [it for it in cs["items"] if it["type"] == t]
-    body = f'<h2>{t.capitalize()}s <span class=meta>({len(items)})</span></h2>'
+    label = t.replace("_", " ").title()
+    body = f'<h2>{label}s <span class=meta>({len(items)})</span></h2>'
     if t != "note":
+        accept_lbl = {"departed": "Delete all", "field_change": "Take website (all)"}.get(t, "Accept all")
+        reject_lbl = {"departed": "Keep all", "field_change": "Keep book (all)", "new_horse": "Skip all"}.get(t, "Reject all")
         body += (f'<div class=bulkbar>Bulk: '
-                 f'<button class="b2 acc" onclick="decideAll(\'{t}\',\'accept\')">Accept all</button>'
-                 f'<button class="b2 rej" onclick="decideAll(\'{t}\',\'reject\')">Reject all</button>'
+                 f'<button class="b2 acc" onclick="decideAll(\'{t}\',\'accept\')">{accept_lbl}</button>'
+                 f'<button class="b2 rej" onclick="decideAll(\'{t}\',\'reject\')">{reject_lbl}</button>'
                  f'<span>— or decide each below</span></div>')
-    if t == "photo":
+    if t == "new_horse":
+        body += '<div class=grid>'
+        for it in items:
+            act = effective(it, state)
+            mk = ", ".join(it.get("markings") or []) or "—"
+            body += (
+                f'<div class=card data-item="{it["id"]}">'
+                f'<div class=name>{it["name"]} '
+                f'<span class="pill acc">{it["state"]}</span></div>'
+                f'<div class=meta>ped {it["pedigree_id"]} · {it.get("sex","")} · '
+                f'{it.get("color","")} · age {it.get("age","?")}</div>'
+                f'<div class=meta style="margin:6px 0"><b>markings:</b> {mk}</div>'
+                f'{_btns(it, act)}</div>')
+        body += '</div>'
+    elif t == "departed":
+        rows = ""
+        for it in items:
+            act = effective(it, state)
+            c = it.get("canon", {})
+            tag = ('<span class="pill acc">clean</span>' if it.get("clean")
+                   else f'<span class="pill rev">has data: {c}</span>')
+            rows += (f'<tr class="{"" if it.get("clean") else "stale"}">'
+                     f'<td class=name>{it["name"]}</td><td>ped {it["pedigree_id"]}</td>'
+                     f'<td>{tag}</td><td>{_btns(it, act, inline=True)}</td></tr>')
+        body += ('<p class=meta>Off both Current rosters → propose <b>delete</b>. '
+                 'Any with attached canon data are flagged for a human (default review).</p>'
+                 f'<table><tr><th>Horse</th><th>Pedigree</th><th>Canon data</th><th>Decision</th></tr>{rows}</table>')
+    elif t == "field_change":
+        rows = ""
+        for it in items:
+            act = effective(it, state)
+            rows += (f'<tr><td class=name>{it["name"]}</td><td>{it["field"]}</td>'
+                     f'<td>{it.get("book_value")!r}</td><td><b>{it.get("scrape_value")!r}</b></td>'
+                     f'<td>{_btns(it, act, inline=True)}</td></tr>')
+        body += ('<p class=meta>Website value is canonical (more precise/correct). '
+                 '<b>Accept</b> takes the website value; <b>Reject</b> keeps the book value.</p>'
+                 f'<table><tr><th>Horse</th><th>Field</th><th>Book</th><th>Website</th><th>Decision</th></tr>{rows}</table>')
+    elif t == "photo":
         body += '<div class=grid>'
         for it in items:
             act = effective(it, state)
@@ -210,7 +285,7 @@ def review(t):
         head = ('<th>Horse</th><th>Region</th><th>Observed</th><th>Decision</th>' if t == "region"
                 else '<th>Mare</th><th>Stallion</th><th>Date</th><th>Decision</th>')
         body += f'<table><tr>{head}</tr>{rows}</table>'
-    return page(t.capitalize(), t, body)
+    return page(label, t, body)
 
 
 def _btns(it, act, inline=False):

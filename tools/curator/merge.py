@@ -52,8 +52,114 @@ CREATE TABLE IF NOT EXISTS field_photos (
 """
 
 
+# Phase 2 scrape canon tables. Pedigree-keyed, like the ingest tables above, so
+# they sit ALONGSIDE the untouched local-id `horses` book table; build_assets
+# overlays them by pedigree_id (don't-clobber). A re-scrape simply replaces these.
+SCRAPE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS scraped_horses (
+    pedigree_id      INTEGER PRIMARY KEY,
+    name             TEXT, nickname TEXT, state TEXT,
+    color            TEXT, coat_pattern TEXT, sex TEXT,
+    markings         TEXT,            -- JSON array
+    genotype         TEXT, eye_color TEXT, brand TEXT,
+    birth_year       TEXT, birth_date TEXT, birth_location TEXT,
+    breeder          TEXT, owner TEXT,
+    auction_price    TEXT, auction_number TEXT, buyback_donor TEXT,
+    registry         TEXT, registry_number TEXT,
+    sire_id          INTEGER, sire_name TEXT, dam_id INTEGER, dam_name TEXT,
+    misty_descendant INTEGER, buyback INTEGER, feral INTEGER, half_chincoteague INTEGER,
+    background       TEXT, qr_video_url TEXT, dsc_photo_url TEXT
+);
+CREATE TABLE IF NOT EXISTS departed_horses (
+    pedigree_id INTEGER PRIMARY KEY,
+    name        TEXT
+);
+"""
+
+# columns of scraped_horses in insert order (drives the parametrized INSERT)
+SCRAPE_COLS = [
+    "pedigree_id", "name", "nickname", "state", "color", "coat_pattern", "sex",
+    "markings", "genotype", "eye_color", "brand", "birth_year", "birth_date",
+    "birth_location", "breeder", "owner", "auction_price", "auction_number",
+    "buyback_donor", "registry", "registry_number", "sire_id", "sire_name",
+    "dam_id", "dam_name", "misty_descendant", "buyback", "feral",
+    "half_chincoteague", "background", "qr_video_url", "dsc_photo_url",
+]
+_BOOL_COLS = {"misty_descendant", "buyback", "feral", "half_chincoteague"}
+
+
 def ensure_schema(con: sqlite3.Connection) -> None:
     con.executescript(SCHEMA)
+
+
+def merge_scrape(out_dir: Path, db_path: Path, decisions: dict) -> dict:
+    """Merge the website re-scrape changeset into the authoring DB (additive,
+    pedigree-keyed). Writes `scraped_horses` (the current roster + enrichment) and
+    `departed_horses` (the delete list), applying the reviewer's decisions:
+      - rejected new_horse  -> that pony is NOT written (don't add it)
+      - accepted departed   -> recorded for deletion at build
+      - rejected field_change -> that scrape column is NULLED so build's don't-clobber
+                                 keeps the book value
+    """
+    changeset = json.loads((out_dir / "changeset.json").read_text(encoding="utf-8"))
+    actions = effective_actions(changeset, decisions)
+    items = {it["id"]: it for it in changeset["items"]}
+    records = {int(k): dict(v) for k, v in changeset["scrape_records"].items()}
+
+    rejected_new = {items[i]["pedigree_id"] for i, a in actions.items()
+                    if items[i]["type"] == "new_horse" and a != "accept"}
+    departed_accept = [(items[i]["pedigree_id"], items[i]["name"]) for i, a in actions.items()
+                       if items[i]["type"] == "departed" and a == "accept"]
+    # rejected field_change -> null that scrape column so the book value survives
+    field_overrides = 0
+    for i, a in actions.items():
+        it = items[i]
+        if it["type"] == "field_change" and a != "accept":
+            records.get(it["pedigree_id"], {})[it["scrape_col"]] = None
+            field_overrides += 1
+
+    report = {"scraped_horses": 0, "new_added": 0, "new_skipped": len(rejected_new),
+              "departed": 0, "field_overrides": field_overrides}
+    book_ids = _book_pedigree_ids(db_path)
+
+    con = sqlite3.connect(db_path)
+    try:
+        con.executescript(SCRAPE_SCHEMA)
+        con.execute("DELETE FROM scraped_horses")   # re-scrape fully replaces this table
+        con.execute("DELETE FROM departed_horses")
+        placeholders = ",".join("?" for _ in SCRAPE_COLS)
+        for pid, rec in records.items():
+            if pid in rejected_new:
+                continue
+            rec["markings"] = json.dumps(rec.get("markings") or [], ensure_ascii=False)
+            for b in _BOOL_COLS:
+                rec[b] = 1 if rec.get(b) else 0
+            con.execute(
+                f"INSERT OR REPLACE INTO scraped_horses ({','.join(SCRAPE_COLS)}) VALUES ({placeholders})",
+                [rec.get(c) for c in SCRAPE_COLS])
+            report["scraped_horses"] += 1
+            if pid not in book_ids:
+                report["new_added"] += 1
+        for pid, name in departed_accept:
+            con.execute("INSERT OR REPLACE INTO departed_horses (pedigree_id, name) VALUES (?,?)",
+                        (pid, name))
+            report["departed"] += 1
+        con.commit()
+    finally:
+        con.close()
+    return report
+
+
+def _book_pedigree_ids(db_path: Path) -> set[int]:
+    import re
+    con = sqlite3.connect(db_path)
+    ids = set()
+    for (url,) in con.execute("SELECT qr_pedigree_url FROM horses"):
+        m = re.search(r"id=(\d+)", url or "")
+        if m:
+            ids.add(int(m.group(1)))
+    con.close()
+    return ids
 
 
 def effective_actions(changeset: dict, decisions: dict) -> dict[str, str]:
@@ -65,6 +171,8 @@ def merge(out_dir: Path = DEFAULT_OUT, db_path: Path = DEFAULT_DB,
           decisions: dict | None = None) -> dict:
     decisions = decisions or {}
     changeset = json.loads((out_dir / "changeset.json").read_text(encoding="utf-8"))
+    if changeset.get("source") == "scrape":   # Phase 2 website re-scrape
+        return merge_scrape(out_dir, db_path, decisions)
     actions = effective_actions(changeset, decisions)
     items = {it["id"]: it for it in changeset["items"]}
 

@@ -20,11 +20,13 @@ SOURCE ─▶ CHANGESET ─▶ review (Accept/Reject) ─▶ MERGE ─▶ BUILD 
 | Changeset (§6) | `make_changeset.py` | ✅ built |
 | Merge → authoring DB (§6) | `merge.py` | ✅ built |
 | Flask review console (§6) | `console.py` | ✅ built |
-| Build assets (§6) | `build_assets.py` | ✅ scaffolded (dry-run safe); needs `background` + drop `book_info` + sire/dam resolve |
+| Build assets (§6) | `build_assets.py` | ✅ built — scrape overlay (don't-clobber), `background`, drops `book_info`, resolves sire/dam, +99/−6, sex/color/price normalize |
 | Scrape rosters + pages (§6, Phase 2) | `scrape_pedigrees.py` | ✅ built — caches 4 rosters + 236 Current pages |
 | Parse pedigree pages (§5/§6) | `parse_pedigree.py` | ✅ built — all §5 fields + `background`; `--validate`, `--id N` |
 | Reconcile vs app (validation) | `reconcile.py` | ✅ built — app-vs-scrape diff, nickname-alias aware |
-| Scrape → changeset (Phase 2) | `make_changeset.py` (scrape source) _todo_ | next: diff parsed.json vs horses.db into the console |
+| Normalization map (§5) | `normalize.py` | ✅ built — shared tobiano→pinto / roster-color / sex / bucket |
+| Scrape → changeset (Phase 2) | `make_changeset.py --source scrape` | ✅ built — 121 items (16 field_change, 99 new_horse, 6 departed) + 236 records |
+| Scrape merge (Phase 2) | `merge.py` (`merge_scrape`) | ✅ built — writes `scraped_horses` + `departed_horses`, honors review decisions |
 
 ## Environment
 

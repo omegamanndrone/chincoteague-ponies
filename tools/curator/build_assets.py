@@ -45,24 +45,107 @@ DEFAULT_OUT = HERE / "out" / "build"
 CANON_PHOTOS = HERE / "out" / "canon_photos"          # field crops, written by merge
 BOOK_PHOTOS = REPO_ROOT / "horse_app" / "assets" / "photos"
 
-# §5 enrichment fields — emitted as null until the columns exist (scrape adds them).
-ENRICH_FIELDS = [
-    "state", "coat_pattern", "markings", "genotype", "birth_location",
-    "breeder", "owner", "auction_number", "registry", "registry_number",
-    "dsc_photo_url",
-]
-# §5 pedigree-chart flag codes (M/B/F/H). Emitted as null until the scrape
-# resolves them, so the JSON shape is FINAL now and the app never needs a second
-# device migration to gain these columns. (★ full-sibling is derived, not stored.)
-LINEAGE_FLAGS = ["misty_descendant", "buyback", "feral", "half_chincoteague"]
-# Columns we deliberately drop from the shipped record (build-time only / superseded).
-DROP_COLS = {"id", "herd", "pdf_page_data", "pdf_page_photo"}
-
 
 def _table_exists(con: sqlite3.Connection, name: str) -> bool:
     return con.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
     ).fetchone() is not None
+
+
+# --- value normalization for display (book/scrape -> one canonical app form) ---
+def _sex_to_app(sex):
+    """Website female/male -> the app's domain vocabulary mare/stallion (the band
+    icon + list logic depend on these exact words). Wild herd => no geldings."""
+    s = (sex or "").lower()
+    if s in ("female", "filly", "mare"):
+        return "mare"
+    if s in ("male", "colt", "stallion"):
+        return "stallion"
+    return sex or None
+
+
+def _title_color(c):
+    return c.title() if c else c           # 'bay pinto' -> 'Bay Pinto'
+
+
+def _price(p):
+    if not p:
+        return p
+    p = str(p)
+    return p if p.startswith("$") else "$" + p   # scrape '6,700' -> '$6,700'
+
+
+def _markings_str(m):
+    """scraped_horses stores markings as a JSON array string; the app model reads
+    `markings` as a display String. Join to 'blaze, four stockings, …'."""
+    if not m:
+        return None
+    if isinstance(m, str):
+        try:
+            m = json.loads(m)
+        except (ValueError, TypeError):
+            return m or None
+    return ", ".join(m) if m else None
+
+
+def _pedigree_url(ped):
+    return f"http://chincoteaguepedigrees.com/pedigree/pedigree.php?id={ped}"
+
+
+def merge_horse(ped: int, book: dict | None, scrape: dict | None) -> dict:
+    """Final shipped horse record = website scrape (canonical) overlaid on the book,
+    with DON'T-CLOBBER: a null scrape field never blanks a populated book field
+    (the book is sometimes richer — e.g. 34 brands the website omits). book_info is
+    DROPPED (superseded by the canon `background`); book_page/pdf_* are build cruft."""
+    b = dict(book) if book else {}
+    s = scrape or {}
+
+    def sc(scrape_key, book_key=None):
+        """scrape-authoritative with book fallback (don't-clobber)."""
+        v = s.get(scrape_key)
+        if v is None or v == "":
+            v = b.get(book_key or scrape_key)
+        return v
+
+    return {
+        "id": ped,
+        "name": s.get("name") or b.get("name"),
+        "nickname": b.get("nickname") or s.get("nickname"),   # book's curated nick preferred
+        "color": _title_color(sc("color")),
+        "sex": _sex_to_app(s.get("sex")) or b.get("sex"),
+        "brand": sc("brand"),
+        "birth_year": sc("birth_year"),
+        "birth_date": sc("birth_date"),
+        "eye_color": sc("eye_color"),
+        "auction_price": _price(sc("auction_price")),
+        "buyback_donor": sc("buyback_donor"),
+        "sire": sc("sire_name", "sire"),
+        "dam": sc("dam_name", "dam"),
+        "notes": b.get("notes"),
+        "qr_video_url": sc("qr_video_url"),
+        "qr_pedigree_url": b.get("qr_pedigree_url") or _pedigree_url(ped),
+        # --- §5 enrichment (scrape-only) ---
+        "sire_id": s.get("sire_id"),
+        "dam_id": s.get("dam_id"),
+        "state": s.get("state"),
+        "coat_pattern": s.get("coat_pattern"),
+        "markings": _markings_str(s.get("markings")),
+        "genotype": s.get("genotype"),
+        "birth_location": s.get("birth_location"),
+        "breeder": s.get("breeder"),
+        "owner": s.get("owner"),
+        "auction_number": s.get("auction_number"),
+        "registry": s.get("registry"),
+        "registry_number": s.get("registry_number"),
+        "dsc_photo_url": s.get("dsc_photo_url"),
+        # --- lineage flags (M/B/F/H); ★ full-sibling derived, not stored ---
+        "misty_descendant": bool(s.get("misty_descendant")),
+        "buyback": bool(s.get("buyback")),
+        "feral": bool(s.get("feral")),
+        "half_chincoteague": bool(s.get("half_chincoteague")),
+        # --- canon narrative (replaces dropped book_info) ---
+        "background": s.get("background"),
+    }
 
 
 def build(db_path: Path, out_dir: Path) -> dict:
@@ -71,50 +154,58 @@ def build(db_path: Path, out_dir: Path) -> dict:
     con.row_factory = sqlite3.Row
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    horse_cols = {r[1] for r in con.execute("PRAGMA table_info(horses)")}
-
-    # --- horses[] : re-keyed to pedigree_id ------------------------------
-    # id_map (local id -> pedigree_id) is emitted as a SEPARATE, non-personal
-    # asset (id_remap.json) the app uses once at cutover to remap the user's
-    # local-only notes onto the new keys — see data_service._restoreRemappedNotes.
-    horses = []
+    # --- horses[] : re-keyed to pedigree_id, scrape overlaid ------------
+    # Roster driver = the website scrape (current VA+MD). The book supplies
+    # legacy fields + the local->pedigree id_map (for the cutover notes remap).
+    #   final ids = scraped_horses  ∪  (book horses NOT departed)
+    #   - 137 overlap : book overlaid by scrape (don't-clobber)
+    #   - 99 new      : scrape only (no book row)
+    #   - 6 departed  : book row dropped (a REJECTED departure stays, via the table)
+    # Pre-merge (no scrape tables) this degrades to book-only = the dry-run proof.
+    book_by_ped: dict[int, dict] = {}
     id_map: dict[str, int] = {}
     for row in con.execute("SELECT * FROM horses"):
         ped = rm.to_pedigree(row["id"])
         id_map[str(row["id"])] = ped
-        rec: dict = {"id": ped}
-        for col in horse_cols:
-            if col not in DROP_COLS:
-                rec[col] = row[col]
-        rec["sire_id"] = None  # resolved by the scrape (pedigree links); names kept in sire/dam
-        rec["dam_id"] = None
-        for f in ENRICH_FIELDS:
-            rec.setdefault(f, row[f] if f in horse_cols else None)
-        for f in LINEAGE_FLAGS:
-            rec.setdefault(f, bool(row[f]) if f in horse_cols else None)
-        horses.append(rec)
-    horses.sort(key=lambda h: h["id"])
+        book_by_ped[ped] = dict(row)
+
+    scraped: dict[int, dict] = {}
+    if _table_exists(con, "scraped_horses"):
+        for row in con.execute("SELECT * FROM scraped_horses"):
+            scraped[row["pedigree_id"]] = dict(row)
+    departed: set[int] = set()
+    if _table_exists(con, "departed_horses"):
+        departed = {r[0] for r in con.execute("SELECT pedigree_id FROM departed_horses")}
+
+    final_ids = set(scraped) | (set(book_by_ped) - departed)
+    horses = [merge_horse(ped, book_by_ped.get(ped), scraped.get(ped))
+              for ped in sorted(final_ids)]
 
     # --- photos[] : book (remapped) + field (pedigree-keyed) -------------
+    # Filtered to final_ids so a DEPARTED horse leaves no orphan photo rows.
     photos = []
     for r in con.execute("SELECT horse_id, filename, source FROM horse_photos"):
-        photos.append({"horse_id": rm.to_pedigree(r["horse_id"]),
-                       "filename": r["filename"], "source": r["source"], "credit": None})
+        ped = rm.to_pedigree(r["horse_id"])
+        if ped in final_ids:
+            photos.append({"horse_id": ped, "filename": r["filename"],
+                           "source": r["source"], "credit": None})
     if _table_exists(con, "field_photos"):
         for r in con.execute("SELECT pedigree_id, filename, credit, source FROM field_photos"):
-            photos.append({"horse_id": r["pedigree_id"], "filename": r["filename"],
-                           "source": r["source"], "credit": r["credit"]})
+            if r["pedigree_id"] in final_ids:
+                photos.append({"horse_id": r["pedigree_id"], "filename": r["filename"],
+                               "source": r["source"], "credit": r["credit"]})
     # field before book, then by horse
     photos.sort(key=lambda p: (p["horse_id"], 0 if p["source"] != "book" else 1))
 
-    # --- bands[] / regions[] : from merged canon tables ------------------
+    # --- bands[] / regions[] : from merged canon tables (final_ids only) -
     bands = []
     if _table_exists(con, "bands"):
         for r in con.execute(
                 "SELECT mare_pedigree_id, stallion_pedigree_id, date_recorded FROM bands"):
-            bands.append({"mare_id": r["mare_pedigree_id"],
-                          "stallion_id": r["stallion_pedigree_id"],
-                          "date_recorded": r["date_recorded"]})
+            if r["mare_pedigree_id"] in final_ids and r["stallion_pedigree_id"] in final_ids:
+                bands.append({"mare_id": r["mare_pedigree_id"],
+                              "stallion_id": r["stallion_pedigree_id"],
+                              "date_recorded": r["date_recorded"]})
     # region_observations preserves dated history (a horse accrues a row per
     # backup/scrape date); the app ships only the CURRENT snapshot, so emit the
     # latest observation per horse.
@@ -124,7 +215,8 @@ def build(db_path: Path, out_dir: Path) -> dict:
                 "SELECT pedigree_id, region, observed FROM region_observations r "
                 "WHERE observed = (SELECT MAX(observed) FROM region_observations "
                 "WHERE pedigree_id = r.pedigree_id)"):
-            regions.append({"id": r["pedigree_id"], "region": r["region"], "observed": r["observed"]})
+            if r["pedigree_id"] in final_ids:
+                regions.append({"id": r["pedigree_id"], "region": r["region"], "observed": r["observed"]})
     con.close()
 
     data = {
